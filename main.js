@@ -1,5 +1,5 @@
 // =========================
-// Disabled Hunter - Maze (logic) + Debug Walls
+// Disabled Hunter - Maze (logic) + Zombies + HUD
 // =========================
 
 const canvas = document.getElementById('game');
@@ -11,7 +11,7 @@ const ASSETS = {
   player: 'assets/player.png',
   zombie: 'assets/zombie.png',
   coin: 'assets/coin.png',
-  coinSpecial: 'assets/coin_special.png', // si no existe, se hace glow
+  coinSpecial: 'assets/coin_special.png', // si no existe, se dibuja glow azul
   music: 'assets/music.mp3',
   sfx: {
     coin: 'assets/sfx_coin.wav',
@@ -71,48 +71,54 @@ const state = {
   gameover: false,
   score: 0,
   hiScore: Number(localStorage.getItem('dh_hiscore')||0),
-  hunter: 0,     // frames
+  hunter: 0,   // frames (~60 = 1s)
   lives: 3
 };
 const player = { x: 80, y: 360, w: 72, h: 72, speed: 4.0, facing: 1, inv: 0 };
+
 let zombies = [];
 let coins = [];
 let specialCoin = null;
 let beam = null;
-let specialCooldown = 240;   // ~4s entre intentos
-let showWalls = false;       // pulsa D para verlas
+
+let specialCooldown = 240; // ~4s entre intentos de moneda especial
+let zombieSpawnTimer = 0;
+let showWalls = false;
 
 // ---- Maze lógico (rects) ----
+// Abrimos mucho la vertical y dejamos pasillos reales.
+// Canvas 960x540
 const walls = [
-  // Bordes (dejan un margen superior e inferior jugable)
-  {x:0,y:0,w:960,h:64},
+  // Bordes finos
+  {x:0,y:-20,w:960,h:20},
   {x:0,y:508,w:960,h:32},
   {x:-30,y:0,w:30,h:540},
   {x:960,y:0,w:30,h:540},
 
-  // Tres bloques “mausoleo” centrales
-  {x:180,y:220,w:180,h:95},
-  {x:420,y:220,w:180,h:95},
-  {x:660,y:220,w:180,h:95},
+  // Mausoleos (más bajos y un poco más abajo para dejar paso arriba/abajo)
+  {x:180,y:260,w:180,h:80},
+  {x:420,y:260,w:180,h:80},
+  {x:660,y:260,w:180,h:80},
 
-  // Tumbas bajas que forman pasillos (no llegan al borde)
-  {x:120,y:448,w:160,h:42},
-  {x:360,y:448,w:160,h:42},
-  {x:600,y:448,w:160,h:42},
+  // Tumbas bajas (finas, no bloquean de extremo a extremo)
+  {x:120,y:470,w:160,h:34},
+  {x:360,y:470,w:160,h:34},
+  {x:600,y:470,w:160,h:34},
 
-  // Islas laterales
+  // Islas laterales para zig-zag
   {x:36,y:300,w:120,h:60},
   {x:804,y:320,w:120,h:60}
 ];
 
-// Rango vertical amplio (casi todo el cementerio, evita franja negra)
-const playMinY = 200;
-const playMaxY = 500;
+// Rango vertical amplio (usa casi todo el cementerio)
+const playMinY = 140;
+const playMaxY = 520;
 
 // ---- Overlay ----
 const overlay = document.getElementById('overlay');
 const startBtn = document.getElementById('startBtn');
 if (startBtn) startBtn.onclick = () => startGame();
+
 function startGame(){
   reset();
   overlay.style.display = 'none';
@@ -135,6 +141,26 @@ function gameOver(){
   },600);
 }
 
+// ---- Utils colisión (hitbox más pequeña) ----
+function hitboxFor(obj, inset=8){
+  const w = Math.max(10, obj.w - inset*2);
+  const h = Math.max(10, obj.h - inset*2);
+  return { x: obj.x + inset, y: obj.y + inset, w, h };
+}
+function rectsOverlap(a,b){
+  const ra = ('w' in a && 'h' in a) ? a : hitboxFor(a,8);
+  const rb = ('w' in b && 'h' in b) ? b : hitboxFor(b,8);
+  return !(ra.x+ra.w < rb.x || ra.x > rb.x+rb.w || ra.y+ra.h < rb.y || ra.y > rb.y+rb.h);
+}
+function rectHitsAnyWall(r){
+  const rr = ('w' in r && 'h' in r) ? r : hitboxFor(r,8);
+  for (const w of walls){
+    if (!(rr.x+rr.w < w.x || rr.x > w.x+w.w || rr.y+rr.h < w.y || rr.y > w.y+w.h)) return true;
+  }
+  return false;
+}
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
 // ---- Spawns ----
 function reset(){
   state.running = true; state.gameover = false;
@@ -142,8 +168,9 @@ function reset(){
   player.x = 80; player.y = 360; player.facing = 1; player.inv = 0;
   zombies.length = 0; coins.length = 0; specialCoin = null;
   specialCooldown = 60; // primera special rápido
+  zombieSpawnTimer = 0;
   spawnCoins();
-  ensureZombies(2); // inicia con 2
+  ensureZombies(2); // arranca con 2
 }
 function spawnCoins(){
   coins.length = 0;
@@ -159,17 +186,18 @@ function spawnCoins(){
 }
 function trySpawnSpecial(){
   if (specialCoin && specialCoin.alive) return;
-  // y dentro del rango accesible
+  // Siempre dentro del rango alcanzable
   const sx = 120 + Math.random()*(canvas.width-240);
-  const sy = clamp(280 + Math.random()*160, playMinY+24, playMaxY-24);
+  const sy = clamp( playMinY + 40 + Math.random()*(playMaxY - playMinY - 80),
+                    playMinY+40, playMaxY-40 );
   const area = {x:sx-18,y:sy-18,w:36,h:36};
   if (!rectHitsAnyWall(area)) specialCoin = {x:sx,y:sy,r:18,alive:true};
 }
 function spawnZombie(){
   const fromRight = Math.random() < 0.5;
   const startX = fromRight ? canvas.width + 60 : -80;
-  const y = clamp(260 + (Math.random()*200), playMinY+8, playMaxY-80);
-  const z = { x:startX, y, w:72, h:72, speed: 0.9 + Math.random()*0.9, alive:true, dir: fromRight?-1:1 };
+  const y = clamp( 180 + (Math.random()*260), playMinY+8, playMaxY-80 );
+  const z = { x:startX, y, w:72, h:72, speed: 0.95 + Math.random()*0.9, alive:true, dir: fromRight?-1:1 };
   zombies.push(z);
 }
 function ensureZombies(min){
@@ -177,25 +205,8 @@ function ensureZombies(min){
   for (let i=alive; i<min; i++) spawnZombie();
 }
 
-// ---- Utils ----
-function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
-function rectsOverlap(a,b){
-  const insetA = 8, insetB = 8;
-  const ax1 = a.x + insetA, ay1 = a.y + insetA;
-  const ax2 = a.x + a.w - insetA, ay2 = a.y + a.h - insetA;
-  const bx1 = b.x + insetB, by1 = b.y + insetB;
-  const bx2 = b.x + b.w - insetB, by2 = b.y + b.h - insetB;
-  return !(ax2 < bx1 || ax1 > bx2 || ay2 < by1 || ay1 > by2);
-}
-function rectHitsAnyWall(r){
-  for (const w of walls){
-    if (!(r.x + r.w < w.x || r.x > w.x+w.w || r.y + r.h < w.y || r.y > w.y+w.h)) return true;
-  }
-  return false;
-}
-
 // ---- Loop ----
-let last = 0, zombieSpawnTimer = 0;
+let last = 0;
 function loop(ts){
   const dt = Math.min(32, ts - last); last = ts;
   update(dt);
@@ -208,7 +219,7 @@ requestAnimationFrame(loop);
 function update(dt){
   if (!state.running || state.gameover) return;
 
-  // Movimiento con pruebas de pared
+  // Movimiento con pruebas de pared (sweep eje X, luego Y)
   let dx = 0, dy = 0;
   if (keys['arrowleft'] || keys['z'])  { dx -= player.speed; player.facing = -1; }
   if (keys['arrowright']|| keys['c'])  { dx += player.speed; player.facing =  1; }
@@ -226,8 +237,21 @@ function update(dt){
   if (state.hunter>0) state.hunter--;
   if (player.inv>0)   player.inv--;
 
+  // Garantiza zombies activos (máx 4)
+  zombieSpawnTimer += dt;
+  if (zombieSpawnTimer > 1000){ // intenta cada ~1s
+    const alive = zombies.filter(z=>z.alive).length;
+    if (alive < 4) spawnZombie();
+    zombieSpawnTimer = 0;
+  }
+  // Si por algún motivo no hay ninguno, fuerza uno
+  if (zombies.filter(z=>z.alive).length === 0) spawnZombie();
+
   // Special coin spawn control
-  if (specialCooldown>0){ specialCooldown--; if (specialCooldown<=0){ trySpawnSpecial(); specialCooldown = 240; } }
+  if (specialCooldown>0){
+    specialCooldown--;
+    if (specialCooldown<=0){ trySpawnSpecial(); specialCooldown = 240; }
+  }
 
   // Monedas normales
   for (const c of coins){
@@ -240,7 +264,7 @@ function update(dt){
   }
   if (coins.every(c=>!c.alive)){
     spawnCoins();
-    ensureZombies(3); // sube la presión con cada ola
+    ensureZombies(3);
   }
 
   // Moneda especial
@@ -248,7 +272,7 @@ function update(dt){
     const dxs = (player.x+player.w/2)-specialCoin.x, dys=(player.y+player.h/2)-specialCoin.y;
     if (Math.hypot(dxs,dys) < specialCoin.r+28){
       specialCoin.alive=false;
-      state.hunter = 8*60;
+      state.hunter = 8*60; // 8s
       state.score += 25;
       sfx.power.currentTime=0; sfx.power.play().catch(()=>{});
     }
@@ -279,16 +303,17 @@ function update(dt){
   zombies.forEach(z=>{
     if (!z.alive) return;
 
-    // steer básico con prueba de paredes
+    // steer con paredes
     const stepX = (player.x > z.x) ? z.speed : -z.speed;
     const tryX = {x: z.x + stepX, y: z.y, w: z.w, h: z.h};
     if (!rectHitsAnyWall(tryX)) z.x += stepX;
 
-    const stepY = (player.y > z.y) ? z.speed*0.4 : -z.speed*0.4;
+    const stepY = (player.y > z.y) ? z.speed*0.45 : -z.speed*0.45;
     const tryY = {x: z.x, y: z.y + stepY, w: z.w, h: z.h};
     if (!rectHitsAnyWall(tryY)) z.y += stepY;
 
-    if (rectsOverlap(player, z) && state.hunter<=0 && player.inv<=0){
+    // daño (con invulnerabilidad)
+    if (rectsOverlap(hitboxFor(player,10), hitboxFor(z,10)) && state.hunter<=0 && player.inv<=0){
       state.lives--;
       player.inv = 60; // 1s
       const dir = (player.x < z.x) ? -1 : 1;
@@ -296,14 +321,6 @@ function update(dt){
       if (state.lives <= 0){ state.running=false; gameOver(); }
     }
   });
-
-  // Garantiza zombies activos (máx 4)
-  zombieSpawnTimer += dt;
-  if (zombieSpawnTimer > 1500){ // cada ~1.5s intenta
-    const alive = zombies.filter(z=>z.alive).length;
-    if (alive < 4) spawnZombie();
-    zombieSpawnTimer = 0;
-  }
 }
 
 // ---- Draw ----
@@ -413,9 +430,8 @@ function debugWalls(){
   ctx.restore();
 
   ctx.save();
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillText('DEBUG WALLS (press D to hide)', 700, 24);
   ctx.restore();
 }
-
