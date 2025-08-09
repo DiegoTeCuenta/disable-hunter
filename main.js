@@ -1,9 +1,9 @@
 // =========================
-// Disabled Hunter — DEBUG BUILD R10
-// Keys: D=walls, B=play-band, Z=spawn zombies x3, G=god mode
+// Disabled Hunter — DEBUG BUILD R11
+// Keys: D=walls, B=play-band, L=spawn zombies x3, G=god mode
 // =========================
 
-const BUILD_TAG = 'R10';
+const BUILD_TAG = 'R11';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -72,7 +72,7 @@ document.addEventListener('keydown', e => {
   if (k==='d') showWalls = !showWalls;
   if (k==='b') showPlayBand = !showPlayBand;
   if (k==='g') godMode = !godMode;
-  if (k==='z') forceSpawnZombies(3);
+  if (k==='l') forceSpawnZombies(3); // NUEVO: L para spawnear
 });
 document.addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
 
@@ -97,23 +97,19 @@ let zombieSpawnTimer = 0;
 
 // ---- Maze lógico (rects) ----
 const walls = [
-  // Bordes finos (permiten casi todo el alto)
   {x:0,y:-20,w:960,h:20},
   {x:0,y:508,w:960,h:32},
   {x:-30,y:0,w:30,h:540},
   {x:960,y:0,w:30,h:540},
 
-  // Mausoleos (más bajos y más abajo)
   {x:180,y:260,w:180,h:80},
   {x:420,y:260,w:180,h:80},
   {x:660,y:260,w:180,h:80},
 
-  // Tumbas bajas finas
   {x:120,y:470,w:160,h:34},
   {x:360,y:470,w:160,h:34},
   {x:600,y:470,w:160,h:34},
 
-  // Islas
   {x:36,y:300,w:120,h:60},
   {x:804,y:320,w:120,h:60}
 ];
@@ -200,11 +196,26 @@ function trySpawnSpecial(){
   const area = {x:sx-18,y:sy-18,w:36,h:36};
   if (!rectHitsAnyWall(area)) specialCoin = {x:sx,y:sy,r:18,alive:true};
 }
+
+// *** FIX: los zombis nacen DENTRO del área jugable, pegados al borde visible ***
+function safeZombieStart(fromRight, w=72, h=72){
+  const padding = 6;                  // dentro del borde
+  const x = fromRight ? (canvas.width - w - padding) : padding;
+  // y en la franja jugable, evitando paredes
+  let y = clamp( 180 + Math.random()*260, playMinY+8, playMaxY - h - 8 );
+  // si cae sobre una pared, intenta desplazarlo un poco arriba/abajo
+  const tryRect = yy => ({x, y:yy, w, h});
+  let tries = 16;
+  while (rectHitsAnyWall(tryRect(y)) && tries--){
+    y = clamp(y + (Math.random()<0.5?-18:18), playMinY+8, playMaxY - h - 8);
+  }
+  return {x, y};
+}
+
 function spawnZombie(){
   const fromRight = Math.random() < 0.5;
-  const startX = fromRight ? canvas.width + 60 : -80;
-  const y = clamp( 180 + (Math.random()*260), playMinY+8, playMaxY-80 );
-  const z = { x:startX, y, w:72, h:72, speed: 0.95 + Math.random()*0.9, alive:true, dir: fromRight?-1:1 };
+  const pos = safeZombieStart(fromRight);
+  const z = { x: pos.x, y: pos.y, w:72, h:72, speed: 0.95 + Math.random()*0.9, alive:true, dir: fromRight?-1:1 };
   zombies.push(z);
 }
 function ensureZombies(min){
@@ -405,7 +416,7 @@ function drawHUD(){
   ctx.save();
   ctx.globalAlpha = 0.75;
   ctx.fillStyle = '#0b1320';
-  ctx.fillRect(10, 10, 340, 70);
+  ctx.fillRect(10, 10, 360, 70);
   ctx.globalAlpha = 1;
 
   ctx.fillStyle = '#fff'; ctx.font = '16px system-ui, sans-serif';
@@ -415,18 +426,18 @@ function drawHUD(){
 
   ctx.fillStyle = '#9fdcff';
   ctx.font = '12px system-ui, sans-serif';
-  ctx.fillText(`BUILD ${BUILD_TAG}  |  D: walls  B: play-band  Z: zombies  G: god=${godMode?'ON':'OFF'}`, 20, 68);
+  ctx.fillText(`BUILD ${BUILD_TAG}  |  D: walls  B: play-band  L: zombies  G: god=${godMode?'ON':'OFF'}`, 20, 68);
 
   if (state.hunter>0){
     const max = 8*60, pct = Math.max(0, Math.min(1, state.hunter/max));
-    ctx.fillStyle = '#9fdcff'; ctx.fillRect(170, 22, 110*pct, 10);
-    ctx.strokeStyle = '#335'; ctx.strokeRect(170, 22, 110, 10);
+    ctx.fillStyle = '#9fdcff'; ctx.fillRect(190, 22, 110*pct, 10);
+    ctx.strokeStyle = '#335'; ctx.strokeRect(190, 22, 110, 10);
     ctx.fillStyle = '#cfeaff'; ctx.font = '12px system-ui, sans-serif';
-    ctx.fillText('HUNTER', 170, 50);
+    ctx.fillText('HUNTER', 190, 50);
   }
 
   for (let i=0;i<state.lives;i++){
-    const hx = 300 + i*30, hy = 16;
+    const hx = 320 + i*30, hy = 16;
     if (heartImg.complete) ctx.drawImage(heartImg, hx, hy, 24, 24);
     else { ctx.fillStyle='#ff6b6b'; ctx.beginPath(); ctx.arc(hx+12,hy+12,10,0,Math.PI*2); ctx.fill(); }
   }
