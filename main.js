@@ -1,15 +1,19 @@
-// ====== CONFIG / ASSETS ======
+// =========================
+// Disabled Hunter - Arcade Maze (logic only)
+// =========================
+
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
+// ---- Assets ----
 const ASSETS = {
   bg: 'assets/background.jpg',
   player: 'assets/player.png',
   zombie: 'assets/zombie.png',
   coin: 'assets/coin.png',
-  // Si no tienes coin_special.png, usaremos coin normal + glow por código
-  coinSpecial: 'assets/coin_special.png',
+  coinSpecial: 'assets/coin_special.png', // si no existe, se dibuja glow
   music: 'assets/music.mp3',
+
   sfx: {
     coin: 'assets/sfx_coin.wav',
     power: 'assets/sfx_power.wav',
@@ -17,28 +21,37 @@ const ASSETS = {
     zombieDie: 'assets/sfx_zombie_die.wav',
     gameover: 'assets/sfx_gameover.wav',
   },
+
   fx: {
     beam: 'assets/fx/fx_beam_128.png',
     hit:  'assets/fx/fx_hit_48.png',
     puff: 'assets/fx/fx_zombie_puff_64.png',
+  },
+
+  ui: {
+    heart: 'assets/ui/ui_heart_32.png',
   }
 };
 
-// ====== MEDIA ======
+// ---- Media ----
 const bgImg = new Image(); bgImg.src = ASSETS.bg;
 const playerImg = new Image(); playerImg.src = ASSETS.player;
 const zombieImg = new Image(); zombieImg.src = ASSETS.zombie;
 const coinImg = new Image(); coinImg.src = ASSETS.coin;
 const coinSpecialImg = new Image(); coinSpecialImg.src = ASSETS.coinSpecial;
+
 const fxBeamImg = new Image(); fxBeamImg.src = ASSETS.fx.beam;
 const fxHitImg  = new Image(); fxHitImg.src  = ASSETS.fx.hit;
 const fxPuffImg = new Image(); fxPuffImg.src = ASSETS.fx.puff;
+
+const heartImg  = new Image(); heartImg.src = ASSETS.ui.heart;
 
 let music;
 function startMusic(){
   if (!music){
     music = new Audio(ASSETS.music);
-    music.loop = true; music.volume = 0.45;
+    music.loop = true;
+    music.volume = 0.45;
   }
   music.currentTime = 0;
   music.play().catch(()=>{});
@@ -51,40 +64,71 @@ const sfx = {
   zombieDie: new Audio(ASSETS.sfx.zombieDie),
   gameover: new Audio(ASSETS.sfx.gameover),
 };
-Object.values(sfx).forEach(a => { a.volume = 0.8; });
+Object.values(sfx).forEach(a => a.volume = 0.85);
 
-// ====== INPUT ======
+// ---- Input ----
 const keys = {};
 document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 document.addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
 
-// ====== GAME STATE ======
+// ---- Game state ----
 const state = {
   running: false,
   gameover: false,
   score: 0,
   hiScore: Number(localStorage.getItem('dh_hiscore')||0),
-  hunter: 0,  // tiempo restante en frames (~60 = 1s)
+  hunter: 0,          // frames (~60 = 1s)
+  lives: 3
 };
 
 const player = { x: 120, y: 380, w: 72, h: 72, speed: 4.0, facing: 1, inv: 0 };
 let zombies = [];
 let coins = [];
 let specialCoin = null;
-let beam = null; // {x,y,w,h,ttl}
+let beam = null;        // {x,y,w,h,ttl,dir}
+let specialCooldown = 360; // ~6s entre intentos
 
-// Zona jugable (dejamos “maze lógico” en área baja; luego colocaremos props)
-const playMinY = 300, playMaxY = 440;
+// ---- Maze lógico (sin props visuales) ----
+// Rectángulos de “pared/bloqueo” que NO puedes atravesar.
+// (x, y, w, h) en píxeles sobre el canvas 960x540
+const walls = [
+  // Bordes
+  {x:0,y:0,w:960,h:72},                 // margen superior
+  {x:0,y:510,w:960,h:30},               // margen inferior
+  {x:-30,y:0,w:30,h:540},               // margen izq
+  {x:960,y:0,w:30,h:540},               // margen der
 
-// ====== OVERLAY START / RESTART ======
+  // Bloques para formar “pasillos” simples:
+  // Línea de mausoleos centrales (izquierda, dejando corredores arriba/abajo)
+  {x:180,y:220,w:180,h:90},
+  {x:420,y:220,w:180,h:90},
+  {x:660,y:220,w:180,h:90},
+
+  // Tumbas bajas que obligan a zig-zag
+  {x:120,y:450,w:160,h:40},
+  {x:360,y:450,w:160,h:40},
+  {x:600,y:450,w:160,h:40},
+
+  // “Islas” para esquinas
+  {x:40,y:300,w:120,h:60},
+  {x:800,y:320,w:120,h:60}
+];
+
+// Zona vertical jugable (nos ayuda a limitar spawns/monedas)
+const playMinY = 260;
+const playMaxY = 500;
+
+// ---- Overlay Start / Restart ----
 const overlay = document.getElementById('overlay');
 const startBtn = document.getElementById('startBtn');
 if (startBtn) startBtn.onclick = () => startGame();
+
 function startGame(){
   reset();
   overlay.style.display = 'none';
   startMusic();
 }
+
 function gameOver(){
   state.gameover = true;
   sfx.gameover.currentTime = 0; sfx.gameover.play().catch(()=>{});
@@ -92,57 +136,91 @@ function gameOver(){
     state.hiScore = state.score;
     localStorage.setItem('dh_hiscore', String(state.hiScore));
   }
-  setTimeout(()=>{ overlay.innerHTML = `
-    <h1>Game Over</h1>
-    <p>Score: ${state.score} &nbsp;|&nbsp; Best: ${state.hiScore}</p>
-    <button id="startBtn">Play again</button>
-  `; overlay.style.display='flex';
+  setTimeout(()=>{
+    overlay.innerHTML = `
+      <h1>Game Over</h1>
+      <p>Score: ${state.score} &nbsp;|&nbsp; Best: ${state.hiScore}</p>
+      <button id="startBtn">Play again</button>
+    `;
+    overlay.style.display = 'flex';
     document.getElementById('startBtn').onclick = ()=> startGame();
   }, 600);
 }
 
-// ====== SPAWNS ======
+// ---- Spawns ----
 function reset(){
   state.running = true;
   state.gameover = false;
   state.score = 0;
+  state.lives = 3;
   state.hunter = 0;
-  player.x = 120; player.y = 380; player.facing = 1; player.inv = 0;
+  player.x = 80; player.y = 360; player.facing = 1; player.inv = 0;
   zombies = [];
   coins = [];
   specialCoin = null;
+  specialCooldown = 120; // primera special rápida (~2s)
   spawnCoins();
   spawnZombie();
-  maybeSpawnSpecial();
-}
-function spawnCoins(){
-  coins.length = 0;
-  // 6–8 monedas distribuidas en pasillos bajos
-  const spots = [
-    {x: 180, y: 410}, {x: 280, y: 360}, {x: 380, y: 420},
-    {x: 520, y: 370}, {x: 640, y: 415}, {x: 740, y: 360},
-    {x: 860, y: 420}, {x: 980, y: 380}
-  ];
-  for (let i=0;i<spots.length;i++){
-    if (Math.random()<0.85) coins.push({x:spots[i].x, y:spots[i].y, r:16, alive:true});
-  }
-}
-function maybeSpawnSpecial(){
-  // 30% de probabilidad de una moneda especial
-  if (Math.random() < 0.3){
-    specialCoin = { x: 120 + Math.random()*(canvas.width-240), y: 340 + Math.random()*80, r:18, alive:true };
-  } else {
-    specialCoin = null;
-  }
-}
-function spawnZombie(){
-  const sideRight = Math.random()<0.5;
-  const startX = sideRight ? canvas.width+40 : -80;
-  const speed = 0.8 + Math.random()*1.0;
-  zombies.push({ x:startX, y: 392+ (Math.random()*40-20), w:72, h:72, speed, alive:true, dir: sideRight?-1:1 });
 }
 
-// ====== LOOP ======
+function spawnCoins(){
+  coins.length = 0;
+  // Sitios a salvo (no dentro de paredes), pasillos bajos/medios
+  const spots = [
+    {x:140,y:380},{x:230,y:330},{x:300,y:420},
+    {x:380,y:360},{x:470,y:420},{x:540,y:330},
+    {x:620,y:390},{x:720,y:350},{x:820,y:390}
+  ];
+  for (const s of spots){
+    if (Math.random()<0.9 && !rectHitsAnyWall({x:s.x-10,y:s.y-10,w:20,h:20})){
+      coins.push({x:s.x,y:s.y,r:16,alive:true});
+    }
+  }
+}
+
+function trySpawnSpecial(){
+  // 70% de probabilidad cuando el cooldown llega a 0
+  if (!specialCoin || !specialCoin.alive){
+    if (Math.random() < 0.7){
+      const sx = 120 + Math.random()*(canvas.width-240);
+      const sy = 300 + Math.random()*160;
+      const area = {x:sx-18,y:sy-18,w:36,h:36};
+      if (!rectHitsAnyWall(area)){
+        specialCoin = {x:sx,y:sy,r:18,alive:true};
+      }
+    }
+  }
+}
+
+function spawnZombie(){
+  // Nace fuera de pantalla y camina hacia el jugador
+  const fromRight = Math.random() < 0.5;
+  const startX = fromRight ? canvas.width + 60 : -80;
+  const y = clamp(320 + (Math.random()*140-70), playMinY+10, playMaxY-80);
+  zombies.push({ x:startX, y, w:72, h:72, speed: 0.9 + Math.random()*0.9, alive:true, dir: fromRight?-1:1 });
+}
+
+// ---- Utils colisión ----
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+function rectsOverlap(a,b){
+  // Inset para colisión más justa
+  const insetA = 8, insetB = 8;
+  const ax1 = a.x + insetA, ay1 = a.y + insetA;
+  const ax2 = a.x + a.w - insetA, ay2 = a.y + a.h - insetA;
+  const bx1 = b.x + insetB, by1 = b.y + insetB;
+  const bx2 = b.x + b.w - insetB, by2 = b.y + b.h - insetB;
+  return !(ax2 < bx1 || ax1 > bx2 || ay2 < by1 || ay1 > by2);
+}
+
+function rectHitsAnyWall(r){
+  for (const w of walls){
+    if (!(r.x + r.w < w.x || r.x > w.x+w.w || r.y + r.h < w.y || r.y > w.y+w.h)) return true;
+  }
+  return false;
+}
+
+// ---- Loop ----
 let last = 0;
 function loop(ts){
   const dt = Math.min(32, ts - last); last = ts;
@@ -152,47 +230,54 @@ function loop(ts){
 }
 requestAnimationFrame(loop);
 
-// ====== UPDATE ======
+// ---- Update ----
 function update(dt){
   if (!state.running || state.gameover) return;
 
-  // Movimiento
-  if (keys['arrowleft'] || keys['z']) { player.x -= player.speed; player.facing = -1; }
-  if (keys['arrowright']|| keys['c']) { player.x += player.speed; player.facing =  1; }
-  if (keys['arrowup']   || keys['s']) { player.y -= player.speed; }
-  if (keys['arrowdown'] || keys['x']) { player.y += player.speed; }
-  // Límites “maze lógico” (pasillo bajo)
-  player.x = Math.max(16, Math.min(canvas.width - player.w - 16, player.x));
-  player.y = Math.max(playMinY, Math.min(playMaxY, player.y));
+  // Movimiento con prueba vs paredes (sweep simple)
+  let dx = 0, dy = 0;
+  if (keys['arrowleft'] || keys['z'])  { dx -= player.speed; player.facing = -1; }
+  if (keys['arrowright']|| keys['c'])  { dx += player.speed; player.facing =  1; }
+  if (keys['arrowup']   || keys['s'])  { dy -= player.speed; }
+  if (keys['arrowdown'] || keys['x'])  { dy += player.speed; }
 
-  // Hunter timer
+  // Propuesta X
+  let next = {x: player.x + dx, y: player.y, w: player.w, h: player.h};
+  if (!rectHitsAnyWall(next)) player.x = next.x;
+  // Propuesta Y
+  next = {x: player.x, y: player.y + dy, w: player.w, h: player.h};
+  if (!rectHitsAnyWall(next)) player.y = next.y;
+
+  // Limitar a zona vertical jugable
+  player.x = clamp(player.x, 10, canvas.width - player.w - 10);
+  player.y = clamp(player.y, playMinY, playMaxY - player.h);
+
+  // Timers
   if (state.hunter>0) state.hunter--;
+  if (player.inv>0)   player.inv--;
+  if (specialCooldown>0) {
+    specialCooldown--;
+    if (specialCooldown<=0){ trySpawnSpecial(); specialCooldown = 360; } // reintento cada ~6s
+  }
 
-  // Invulnerabilidad pequeña tras golpe (si luego usamos vidas)
-  if (player.inv>0) player.inv--;
-
-  // Recoger monedas normales
+  // Monedas normales
   for (const c of coins){
     if (!c.alive) continue;
     const dx = (player.x+player.w/2)-c.x, dy=(player.y+player.h/2)-c.y;
     if (Math.hypot(dx,dy) < c.r+26){
-      c.alive=false;
-      state.score += 10;
+      c.alive=false; state.score += 10;
       sfx.coin.currentTime=0; sfx.coin.play().catch(()=>{});
     }
   }
-  // Si ya no quedan, respawn + chance especial
   if (coins.every(c=>!c.alive)){
     spawnCoins();
-    maybeSpawnSpecial();
-    // cada ronda, un zombi más (máx 4)
     if (zombies.filter(z=>z.alive).length < 4) spawnZombie();
   }
 
-  // Moneda especial → modo Hunter
+  // Moneda especial
   if (specialCoin && specialCoin.alive){
-    const dx = (player.x+player.w/2)-specialCoin.x, dy=(player.y+player.h/2)-specialCoin.y;
-    if (Math.hypot(dx,dy) < specialCoin.r+28){
+    const dxs = (player.x+player.w/2)-specialCoin.x, dys=(player.y+player.h/2)-specialCoin.y;
+    if (Math.hypot(dxs,dys) < specialCoin.r+28){
       specialCoin.alive=false;
       state.hunter = 8*60; // 8s
       state.score += 25;
@@ -200,7 +285,7 @@ function update(dt){
     }
   }
 
-  // Ataque (solo con Hunter activo)
+  // Ataque si Hunter activo
   if (state.hunter>0 && (keys[' '] || keys['space']) && !beam){
     const bx = player.facing===1 ? player.x + player.w - 8 : player.x - 120;
     beam = { x: bx, y: player.y + player.h*0.35, w: 120, h: 18, ttl: 10, dir: player.facing };
@@ -208,49 +293,58 @@ function update(dt){
   }
   if (beam){
     beam.ttl--;
-    // Hit detection simple tipo rayo
     zombies.forEach(z=>{
       if (!z.alive) return;
-      const bx1 = beam.dir===1 ? beam.x : beam.x;
-      const bw  = Math.abs(beam.w);
+      const bx1 = beam.x, bw = Math.abs(beam.w);
       const hit = !(z.x > bx1 + bw || z.x + z.w < bx1 || z.y > beam.y + beam.h || z.y + z.h < beam.y);
       if (hit){
         z.alive=false;
         state.score += 50;
         sfx.zombieDie.currentTime=0; sfx.zombieDie.play().catch(()=>{});
-        // puff visual (marcamos un efecto efímero)
-        z.puff = { x: z.x+z.w/2, y:z.y+z.h/2, ttl: 18 };
+        z.puff = { x: z.x+z.w/2, y: z.y+z.h/2, ttl: 18 };
       }
     });
     if (beam.ttl<=0) beam=null;
   }
 
-  // Movimiento de zombies + daño al jugador
+  // Zombies: movimiento + daño
   zombies.forEach(z=>{
     if (!z.alive) return;
-    // acercamiento básico
+
+    // steer hacia el jugador evitando meterlos dentro de paredes
     const targetX = player.x + (player.facing===1? 10 : -10);
-    if (z.x < targetX) z.x += z.speed; else z.x -= z.speed;
-    // colisión con jugador (si NO hay hunter)
+    const step = (targetX > z.x) ? z.speed : -z.speed;
+    const tryX = {x: z.x + step, y: z.y, w: z.w, h: z.h};
+    if (!rectHitsAnyWall(tryX)) z.x += step;
+
+    const vy = (player.y > z.y) ? z.speed*0.4 : -z.speed*0.4;
+    const tryY = {x: z.x, y: z.y + vy, w: z.w, h: z.h};
+    if (!rectHitsAnyWall(tryY)) z.y += vy;
+
     if (rectsOverlap(player, z) && state.hunter<=0 && player.inv<=0){
-      // muerte instantánea en esta versión
-      state.running = false;
-      gameOver();
+      state.lives--;
+      player.inv = 60; // 1s invuln
+      const dir = (player.x < z.x) ? -1 : 1;
+      player.x += dir * -40; // knockback
+      if (state.lives <= 0){
+        state.running = false;
+        gameOver();
+      }
     }
   });
 
-  // Ocasionalmente spawnea otro zombie
+  // Spawn extra ocasional (cap a 5 vivos)
   if (Math.random()<0.002 && zombies.filter(z=>z.alive).length<5) spawnZombie();
 }
-function rectsOverlap(a,b){
-  return !(a.x+a.w < b.x || a.x > b.x+b.w || a.y+a.h < b.y || a.y > b.y+b.h);
-}
 
-// ====== DRAW ======
+// ---- Draw ----
 function draw(){
   // Fondo
   if (bgImg.complete) ctx.drawImage(bgImg, 0,0, canvas.width, canvas.height);
   else { ctx.fillStyle = '#0b0e13'; ctx.fillRect(0,0,canvas.width,canvas.height); }
+
+  // (Opcional debug: ver paredes)
+  // debugWalls();
 
   // Monedas normales
   for (const c of coins){
@@ -258,17 +352,18 @@ function draw(){
     if (coinImg.complete) ctx.drawImage(coinImg, c.x-16, c.y-16, 32, 32);
     else { ctx.fillStyle='gold'; ctx.beginPath(); ctx.arc(c.x,c.y,16,0,Math.PI*2); ctx.fill(); }
   }
+
   // Moneda especial
   if (specialCoin && specialCoin.alive){
-    if (coinSpecialImg.complete && coinSpecialImg.naturalWidth>0){
+    if (coinSpecialImg && coinSpecialImg.complete && coinSpecialImg.naturalWidth>0){
       ctx.drawImage(coinSpecialImg, specialCoin.x-18, specialCoin.y-18, 36,36);
     } else {
-      // fallback: moneda normal + glow
+      // glow + moneda normal
       ctx.save();
-      const grd = ctx.createRadialGradient(specialCoin.x, specialCoin.y, 4, specialCoin.x, specialCoin.y, 24);
+      const grd = ctx.createRadialGradient(specialCoin.x, specialCoin.y, 4, specialCoin.x, specialCoin.y, 26);
       grd.addColorStop(0,'rgba(255,240,0,0.9)');
       grd.addColorStop(1,'rgba(255,240,0,0)');
-      ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(specialCoin.x, specialCoin.y, 22, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(specialCoin.x, specialCoin.y, 24, 0, Math.PI*2); ctx.fill();
       ctx.restore();
       if (coinImg.complete) ctx.drawImage(coinImg, specialCoin.x-16, specialCoin.y-16, 32,32);
     }
@@ -297,7 +392,6 @@ function draw(){
     ctx.save();
     ctx.globalAlpha = 0.9;
     if (fxBeamImg.complete) {
-      // repetimos el sprite beam a lo largo del rayo
       const segW = 64, segH = 18;
       const count = Math.ceil(Math.abs(beam.w)/segW);
       for (let i=0;i<count;i++){
@@ -306,48 +400,62 @@ function draw(){
     } else {
       ctx.fillStyle = '#e6f7ff'; ctx.fillRect(beam.x, beam.y, Math.abs(beam.w), beam.h);
     }
-    // hit glow
     ctx.globalAlpha = 0.35;
     if (fxHitImg.complete) ctx.drawImage(fxHitImg, beam.x + Math.abs(beam.w)-24, beam.y-16, 48,48);
     ctx.restore();
   }
 
   // Player
-  if (playerImg.complete) {
+  if (playerImg.complete){
     ctx.save();
-    if (state.hunter>0){
-      // leve brillo en modo Hunter
-      ctx.shadowBlur = 12; ctx.shadowColor = '#9fdcff';
-    }
+    if (state.hunter>0){ ctx.shadowBlur = 12; ctx.shadowColor = '#9fdcff'; }
+    // parpadeo si invulnerable
+    if (player.inv>0 && (Math.floor(performance.now()/100)%2===0)) ctx.globalAlpha = 0.5;
     ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
     ctx.restore();
-  } else { ctx.fillStyle = '#22c55e'; ctx.fillRect(player.x, player.y, player.w, player.h); }
+  } else { ctx.fillStyle='#22c55e'; ctx.fillRect(player.x, player.y, player.w, player.h); }
 
-  // HUD (panel por código)
   drawHUD();
 }
+
 function drawHUD(){
   // panel
   ctx.save();
   ctx.globalAlpha = 0.75;
   ctx.fillStyle = '#0b1320';
-  ctx.fillRect(10, 10, 240, 58);
+  ctx.fillRect(10, 10, 260, 58);
   ctx.globalAlpha = 1;
 
   // score
   ctx.fillStyle = '#fff'; ctx.font = '16px system-ui, sans-serif';
   ctx.fillText('Score: '+state.score, 20, 32);
-  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.fillText('Best: '+state.hiScore, 20, 52);
 
-  // hunter timer bar
+  // hunter bar
   if (state.hunter>0){
-    const max = 8*60;
-    const pct = Math.max(0, Math.min(1, state.hunter/max));
+    const max = 8*60, pct = Math.max(0, Math.min(1, state.hunter/max));
     ctx.fillStyle = '#9fdcff'; ctx.fillRect(130, 22, 110*pct, 10);
     ctx.strokeStyle = '#335'; ctx.strokeRect(130, 22, 110, 10);
     ctx.fillStyle = '#cfeaff'; ctx.font = '12px system-ui, sans-serif';
     ctx.fillText('HUNTER', 130, 50);
   }
+
+  // vidas
+  for (let i=0;i<state.lives;i++){
+    const hx = 280 + i*30, hy = 16;
+    if (heartImg.complete) ctx.drawImage(heartImg, hx, hy, 24, 24);
+    else { ctx.fillStyle='#ff6b6b'; ctx.beginPath(); ctx.arc(hx+12,hy+12,10,0,Math.PI*2); ctx.fill(); }
+  }
+
+  ctx.restore();
+}
+
+// ---- Debug walls (opcional) ----
+function debugWalls(){
+  ctx.save();
+  ctx.globalAlpha = 0.15;
+  ctx.fillStyle = '#ff3b3b';
+  walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
   ctx.restore();
 }
