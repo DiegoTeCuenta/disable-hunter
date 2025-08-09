@@ -1,9 +1,9 @@
 // =========================
-// Disabled Hunter — DEBUG BUILD R11
+// Disabled Hunter — DEBUG BUILD R12
 // Keys: D=walls, B=play-band, L=spawn zombies x3, G=god mode
 // =========================
 
-const BUILD_TAG = 'R11';
+const BUILD_TAG = 'R12';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -14,7 +14,7 @@ const ASSETS = {
   player: 'assets/player.png',
   zombie: 'assets/zombie.png',
   coin: 'assets/coin.png',
-  coinSpecial: 'assets/coin_special.png', // si falta, se dibuja glow
+  coinSpecial: 'assets/coin_special.png',
   music: 'assets/music.mp3',
   sfx: {
     coin: 'assets/sfx_coin.wav',
@@ -60,7 +60,7 @@ const sfx = {
 };
 Object.values(sfx).forEach(a => a.volume = 0.85);
 
-// ---- Input ----
+// ---- Input / Debug ----
 const keys = {};
 let showWalls = false;
 let showPlayBand = false;
@@ -72,7 +72,7 @@ document.addEventListener('keydown', e => {
   if (k==='d') showWalls = !showWalls;
   if (k==='b') showPlayBand = !showPlayBand;
   if (k==='g') godMode = !godMode;
-  if (k==='l') forceSpawnZombies(3); // NUEVO: L para spawnear
+  if (k==='l') forceSpawnZombies(3);
 });
 document.addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
 
@@ -95,7 +95,7 @@ let beam = null;
 let specialCooldown = 240;
 let zombieSpawnTimer = 0;
 
-// ---- Maze lógico (rects) ----
+// ---- Maze (rects) ----
 const walls = [
   {x:0,y:-20,w:960,h:20},
   {x:0,y:508,w:960,h:32},
@@ -114,9 +114,9 @@ const walls = [
   {x:804,y:320,w:120,h:60}
 ];
 
-// Rango vertical amplio
-const playMinY = 140;
-const playMaxY = 520;
+// Banda vertical más amplia
+const playMinY = 120;
+const playMaxY = 530;
 
 // ---- Overlay ----
 const overlay = document.getElementById('overlay');
@@ -146,7 +146,7 @@ function gameOver(){
   },600);
 }
 
-// ---- Utils colisión (hitbox más pequeña) ----
+// ---- Colisiones / Utils ----
 function hitboxFor(obj, inset=8){
   const w = Math.max(10, obj.w - inset*2);
   const h = Math.max(10, obj.h - inset*2);
@@ -166,16 +166,40 @@ function rectHitsAnyWall(r){
 }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
+// línea de vista (sample discreto)
+function lineClear(x1,y1,x2,y2, steps=24){
+  for (let i=0;i<=steps;i++){
+    const t = i/steps;
+    const px = x1 + (x2-x1)*t;
+    const py = y1 + (y2-y1)*t;
+    if (rectHitsAnyWall({x:px-4,y:py-4,w:8,h:8})) return false;
+  }
+  return true;
+}
+
+// despegue seguro (si por algún motivo inicia tocando pared)
+function unstick(obj){
+  let tries = 32;
+  while (rectHitsAnyWall(obj) && tries--){
+    obj.y = clamp(obj.y - 4, playMinY, playMaxY - obj.h);
+    obj.x = clamp(obj.x + 2, 10, canvas.width - obj.w - 10);
+  }
+}
+
 // ---- Spawns ----
 function reset(){
   state.running = true; state.gameover = false;
   state.score = 0; state.lives = 3; state.hunter = 0;
   player.x = 80; player.y = 360; player.facing = 1; player.inv = 0;
+  unstick(player);
+
   zombies.length = 0; coins.length = 0; specialCoin = null;
   specialCooldown = 60; zombieSpawnTimer = 0;
+
   spawnCoins();
   ensureZombies(2);
 }
+
 function spawnCoins(){
   coins.length = 0;
   const spots = [
@@ -188,32 +212,56 @@ function spawnCoins(){
     if (Math.random()<0.9 && !rectHitsAnyWall(r)) coins.push({x:s.x,y:s.y,r:16,alive:true});
   }
 }
+
 function trySpawnSpecial(){
   if (specialCoin && specialCoin.alive) return;
-  const sx = 120 + Math.random()*(canvas.width-240);
-  const sy = clamp( playMinY + 40 + Math.random()*(playMaxY - playMinY - 80),
-                    playMinY+40, playMaxY-40 );
-  const area = {x:sx-18,y:sy-18,w:36,h:36};
-  if (!rectHitsAnyWall(area)) specialCoin = {x:sx,y:sy,r:18,alive:true};
+
+  const pcx = player.x + player.w/2;
+  const pcy = player.y + player.h/2;
+
+  let tries = 30;
+  while (tries--){
+    const sx = 120 + Math.random()*(canvas.width-240);
+    const sy = clamp( playMinY + 40 + Math.random()*(playMaxY - playMinY - 80),
+                      playMinY+40, playMaxY-40 );
+    const area = {x:sx-18,y:sy-18,w:36,h:36};
+    if (rectHitsAnyWall(area)) continue;
+    // debe tener línea de vista desde el jugador
+    if (!lineClear(pcx, pcy, sx, sy)) continue;
+    specialCoin = {x:sx,y:sy,r:18,alive:true};
+    break;
+  }
 }
 
-// *** FIX: los zombis nacen DENTRO del área jugable, pegados al borde visible ***
+// spawns lejos del jugador y dentro del mapa
 function safeZombieStart(fromRight, w=72, h=72){
-  const padding = 6;                  // dentro del borde
-  const x = fromRight ? (canvas.width - w - padding) : padding;
-  // y en la franja jugable, evitando paredes
+  const pad = 8;
+  let x = fromRight ? (canvas.width - w - pad) : pad;
+
+  // si el jugador está muy cerca de ese borde, usa el otro
+  const distX = Math.abs((player.x + player.w/2) - (x + w/2));
+  if (distX < 220) x = (x === pad) ? (canvas.width - w - pad) : pad;
+
   let y = clamp( 180 + Math.random()*260, playMinY+8, playMaxY - h - 8 );
-  // si cae sobre una pared, intenta desplazarlo un poco arriba/abajo
-  const tryRect = yy => ({x, y:yy, w, h});
   let tries = 16;
-  while (rectHitsAnyWall(tryRect(y)) && tries--){
+  while (rectHitsAnyWall({x,y,w,h}) && tries--){
     y = clamp(y + (Math.random()<0.5?-18:18), playMinY+8, playMaxY - h - 8);
   }
-  return {x, y};
+  // garantía de distancia mínima radial
+  const pcx = player.x + player.w/2, pcy = player.y + player.h/2;
+  const zcx = x + w/2, zcy = y + h/2;
+  if (Math.hypot(zcx-pcx, zcy-pcy) < 220){
+    x = (x === pad) ? (canvas.width - w - pad) : pad;
+  }
+  return {x,y};
 }
 
 function spawnZombie(){
-  const fromRight = Math.random() < 0.5;
+  let fromRight = Math.random() < 0.5;
+  // empuja al lado opuesto si el jugador está “dominando” ese lado
+  if (fromRight && player.x > canvas.width*0.55) fromRight = false;
+  if (!fromRight && player.x < canvas.width*0.45) fromRight = true;
+
   const pos = safeZombieStart(fromRight);
   const z = { x: pos.x, y: pos.y, w:72, h:72, speed: 0.95 + Math.random()*0.9, alive:true, dir: fromRight?-1:1 };
   zombies.push(z);
@@ -241,7 +289,7 @@ requestAnimationFrame(loop);
 function update(dt){
   if (!state.running || state.gameover) return;
 
-  // Movimiento + colisiones de pared
+  // Movimiento + colisiones
   let dx = 0, dy = 0;
   if (keys['arrowleft'] || keys['z'])  { dx -= player.speed; player.facing = -1; }
   if (keys['arrowright']|| keys['c'])  { dx += player.speed; player.facing =  1; }
@@ -288,7 +336,7 @@ function update(dt){
     ensureZombies(3);
   }
 
-  // Recoger special
+  // Recoger special (ahora con LoS ya debería ser alcanzable)
   if (specialCoin && specialCoin.alive){
     const dxs = (player.x+player.w/2)-specialCoin.x, dys=(player.y+player.h/2)-specialCoin.y;
     if (Math.hypot(dxs,dys) < specialCoin.r+28){
@@ -416,7 +464,7 @@ function drawHUD(){
   ctx.save();
   ctx.globalAlpha = 0.75;
   ctx.fillStyle = '#0b1320';
-  ctx.fillRect(10, 10, 360, 70);
+  ctx.fillRect(10, 10, 375, 70);
   ctx.globalAlpha = 1;
 
   ctx.fillStyle = '#fff'; ctx.font = '16px system-ui, sans-serif';
@@ -430,14 +478,14 @@ function drawHUD(){
 
   if (state.hunter>0){
     const max = 8*60, pct = Math.max(0, Math.min(1, state.hunter/max));
-    ctx.fillStyle = '#9fdcff'; ctx.fillRect(190, 22, 110*pct, 10);
-    ctx.strokeStyle = '#335'; ctx.strokeRect(190, 22, 110, 10);
+    ctx.fillStyle = '#9fdcff'; ctx.fillRect(200, 22, 110*pct, 10);
+    ctx.strokeStyle = '#335'; ctx.strokeRect(200, 22, 110, 10);
     ctx.fillStyle = '#cfeaff'; ctx.font = '12px system-ui, sans-serif';
-    ctx.fillText('HUNTER', 190, 50);
+    ctx.fillText('HUNTER', 200, 50);
   }
 
   for (let i=0;i<state.lives;i++){
-    const hx = 320 + i*30, hy = 16;
+    const hx = 330 + i*30, hy = 16;
     if (heartImg.complete) ctx.drawImage(heartImg, hx, hy, 24, 24);
     else { ctx.fillStyle='#ff6b6b'; ctx.beginPath(); ctx.arc(hx+12,hy+12,10,0,Math.PI*2); ctx.fill(); }
   }
