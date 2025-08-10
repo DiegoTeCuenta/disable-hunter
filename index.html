@@ -4,55 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Disabled Hunter</title>
-  <link rel="stylesheet" href="style.css" />
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: #111;
-      overflow: hidden;
-      height: 100%;
-    }
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-      background: #222;
-    }
-    .overlay {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.8);
-      color: #fff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      font-family: sans-serif;
-      z-index: 10;
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 1rem;
-      margin-top: 1rem;
-      cursor: pointer;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css?v=R22">
 </head>
 <body>
+
   <!-- Overlay de inicio / pausa / game over -->
   <div id="overlay" class="overlay" style="display:none">
     <h1>Disabled Hunter</h1>
-    <p>Move: ← → &nbsp;|&nbsp; Jump: ↑ / Space &nbsp;|&nbsp; Shoot: X</p>
+    <p>Move: ← →  |  Jump: ↑ / Space  |  Shoot: X</p>
     <button id="startBtn">Start</button>
   </div>
 
   <!-- Lienzo del juego -->
-  <canvas id="game" width="1920" height="1080"></canvas>
+  <canvas id="game"></canvas>
 
-  <!-- Script principal -->
-  <script src="main.js?v=R18"></script>
+  <!-- Script principal (DEFER para que exista el canvas) -->
+  <script src="main.js?v=R22" defer></script>
 </body>
 </html>
