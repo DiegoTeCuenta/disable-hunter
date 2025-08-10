@@ -33,7 +33,7 @@ scrollAccelEachSec: 0,
   beamSpeed: 900,
 
   // Obstáculos (hitbox vs dibujo)
-  obst: { hitW: 70, hitH: 56, drawW: 112, drawH: 112 }
+  obst: { hitW: 65, hitH: 50, drawW: 112, drawH: 112 }
 };
 /* -------------------------------------------------- */
 
