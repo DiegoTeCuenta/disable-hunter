@@ -14,9 +14,9 @@ scrollAccelEachSec: 0,
 
   // Movimiento del jugador
   playerSpeed: 300,          // velocidad lateral (px/s)
-  jump: -750,                // fuerza salto (px/s)
+  jump: -900,                // fuerza salto (px/s)
   gravity: 2200,             // gravedad (px/s^2)
-  coyote: 0.1,               // “coyote time” para saltar justo al borde
+  coyote: 0.16,               // “coyote time” para saltar justo al borde
 
   // Gaps de spawns en distancia recorrida (px de mundo)
   gaps: {
@@ -33,7 +33,7 @@ scrollAccelEachSec: 0,
   beamSpeed: 900,
 
   // Obstáculos (hitbox vs dibujo)
-  obst: { hitW: 78, hitH: 66, drawW: 112, drawH: 112 }
+  obst: { hitW: 70, hitH: 56, drawW: 112, drawH: 112 }
 };
 /* -------------------------------------------------- */
 
