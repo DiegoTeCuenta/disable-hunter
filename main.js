@@ -1,5 +1,5 @@
 // =========================
-// Disabled Hunter — main.js (Player-Driven + Ahead Spawns)
+// Disabled Hunter — main.js  (Ahead spawns with safe look-ahead)
 // =========================
 
 const canvas = document.getElementById("game");
@@ -7,9 +7,9 @@ const ctx = canvas.getContext("2d");
 function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
 addEventListener("resize", resize); resize();
 
-/* ----------------- T U N I N G  ----------------- */
+/* ----------------- TUNING ----------------- */
 const CFG = {
-  // Movimiento del jugador
+  // Jugador
   playerSpeed: 6.0,
   jump:       -21.0,
   gravity:     1.12,
@@ -27,7 +27,15 @@ const CFG = {
     obsChance: 0.55
   },
 
-  // Obstáculos
+  // Distancia de “aparecer antes del borde derecho”
+  lookAhead: {
+    coin:  420,
+    spec:  480,
+    zomb:  520,
+    obst:  560
+  },
+
+  // Obstáculos (hitbox vs. dibujo)
   obst: { hitW: 78, hitH: 66, drawW: 112, drawH: 112 },
 
   // Power / disparo
@@ -35,13 +43,13 @@ const CFG = {
   beamCost: 20,
   beamSpeed: 900
 };
-/* ------------------------------------------------ */
+/* ------------------------------------------ */
 
 const rand = (a,b)=>Math.random()*(b-a)+a;
 const chance = p => Math.random() < p;
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 
-/* ------------ Carga de assets ------------ */
+/* ------------ Assets ------------ */
 function loadImg(src){ const i=new Image(); i.src=src; return i; }
 function loadSnd(src,loop=false){ try{const a=new Audio(src); a.loop=loop; return a;}catch{ return null; } }
 
@@ -110,7 +118,7 @@ addEventListener("keydown", e=>{
 });
 addEventListener("keyup", e=>keys.delete(e.code));
 
-/* ----------- Ciclo de vida ----------- */
+/* ----------- Ciclo ----------- */
 function resetPlayer(){
   const p = state.p;
   p.y = groundY()-p.h;
@@ -143,22 +151,22 @@ function gameOver(){
   if (sndMusic){ sndMusic.pause(); }
 }
 
-/* ----------- Spawns por distancia (ADELANTE) ----------- */
-// Distancias por delante de la cámara para aparecer en pantalla
-function ahead(distFactor=0.85, jitter=60){
-  return state.worldX + canvas.width*distFactor + rand(-jitter, jitter);
+/* ----------- Spawn helpers (look-ahead real) ----------- */
+function spawnXWithLookAhead(px){
+  // px = píxeles antes del borde derecho
+  return state.worldX + canvas.width - px;
 }
-
 function spawnCoinAhead(special=false){
+  // Monedas visibles y por encima de la niebla
   state.coins.push({
-    x: ahead(0.88, 90),
-    y: groundY()-64 - rand(0,30),
-    w:44, h:44, special
+    x: spawnXWithLookAhead(CFG.lookAhead.coin) + rand(-70, 70),
+    y: groundY() - 88 - rand(0, 24),
+    w: 56, h: 56, special
   });
 }
 function spawnZombieAhead(){
   state.zombies.push({
-    x: ahead(0.93, 60),
+    x: spawnXWithLookAhead(CFG.lookAhead.zomb) + rand(-50, 50),
     y: groundY()-64, w:64, h:64
   });
 }
@@ -167,7 +175,7 @@ function spawnObstacleAhead(){
   const img = useM ? imgMausoleum : imgTomb;
   const hbW = CFG.obst.hitW, hbH = CFG.obst.hitH;
   state.obstacles.push({
-    x: ahead(0.90, 40),
+    x: spawnXWithLookAhead(CFG.lookAhead.obst) + rand(-40, 40),
     y: groundY()-hbH, w: hbW, h: hbH,
     drawW: CFG.obst.drawW, drawH: CFG.obst.drawH, img
   });
@@ -191,7 +199,7 @@ function shoot(){
   if (sfxBeam){ sfxBeam.currentTime=0; sfxBeam.play().catch(()=>{}); }
 }
 
-/* ----------- Colisiones ----------- */
+/* ----------- Colisión ----------- */
 function overlaps(a,b){
   return a.x < b.x + b.w && a.x + a.w > b.x &&
          a.y < b.y + b.h && a.y + a.h > b.y;
@@ -201,19 +209,19 @@ function overlaps(a,b){
 function update(dt){
   const p = state.p;
 
-  // Movimiento horizontal
+  // Movimiento
   let mv = 0;
   if (keys.has("ArrowLeft") || keys.has("KeyZ")) mv -= 1;
   if (keys.has("ArrowRight")|| keys.has("KeyC")) mv += 1;
   p.vx = mv * p.speed;
 
-  // Coyote-time
+  // Coyote
   if (p.onGround) p.coyote = CFG.coyote;
   else if (p.coyote>0) p.coyote -= dt;
 
   // Salto
   if ((keys.has("ArrowUp")||keys.has("KeyS")) && (p.onGround || p.coyote>0)){
-    p.vy = p.jump; p.onGround=false; p.coyote=0;
+    p.vy = CFG.jump; p.onGround=false; p.coyote=0;
   }
 
   // Física
@@ -221,11 +229,11 @@ function update(dt){
   p.y  += p.vy;
   if (p.y >= groundY()-p.h){ p.y = groundY()-p.h; p.vy=0; p.onGround=true; }
 
-  // Clamp pantalla
+  // Límites X
   p.x += p.vx;
   p.x = clamp(p.x, 120, canvas.width - (120 + p.w));
 
-  // Avance del mundo
+  // Avance mundo
   state.worldX += p.vx;
 
   // Parallax
@@ -236,7 +244,7 @@ function update(dt){
   if (p.invul>0)  p.invul -= dt;
   if (p.shotCd>0) p.shotCd -= dt;
 
-  // ---------- Spawns por distancia (y ADELANTE) ----------
+  // ---- Spawns por distancia + look-ahead (aparecen antes) ----
   while (state.worldX >= state.nextCoinAt){
     spawnCoinAhead(false);
     state.nextCoinAt += rand(CFG.spawn.coinMin, CFG.spawn.coinMax);
@@ -254,7 +262,7 @@ function update(dt){
     state.nextObsAt += rand(CFG.spawn.obsMin, CFG.spawn.obsMax);
   }
 
-  // ---------- Lógica entidades ----------
+  // Ventana de cámara para limpiar
   const camL = state.worldX - 80;
   const camR = state.worldX + canvas.width + 80;
 
@@ -294,7 +302,7 @@ function update(dt){
       }
     }
 
-    // Golpe al jugador (hitbox amable)
+    // Golpe al jugador
     const hb = { x: z.x+10, y:z.y+10, w:z.w-20, h:z.h-20 };
     const pr = { x: state.worldX + p.x, y:p.y, w:p.w, h:p.h };
     if (p.invul<=0 && overlaps(pr, hb)){
@@ -345,7 +353,6 @@ function drawTiled(img, y, offset, alpha=1){
   for (; x < canvas.width; x += w) ctx.drawImage(img, x, y);
   ctx.restore();
 }
-
 function render(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.fillStyle="#0a0d12"; ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -360,22 +367,18 @@ function render(){
   for (const c of state.coins){
     ctx.drawImage(c.special?imgCoinS:imgCoin, X(c.x), c.y, c.w, c.h);
   }
-
   for (const o of state.obstacles){
     const dx = X(o.x) - (o.drawW - o.w)/2;
     const dy = o.y - (o.drawH - o.h);
     ctx.drawImage(o.img, dx, dy, o.drawW, o.drawH);
   }
-
   for (const z of state.zombies){
     ctx.drawImage(imgZombie, X(z.x), z.y, z.w, z.h);
   }
-
   ctx.fillStyle="#7ec8ff";
   for (const b of state.beams){
     ctx.fillRect(X(b.x), b.y, b.w, b.h);
   }
-
   for (const f of state.puffs){
     ctx.globalAlpha = 1 - f.frame/f.frames;
     ctx.drawImage(imgPuff, X(f.x), f.y, 64, 64);
