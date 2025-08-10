@@ -1,21 +1,16 @@
-/* =========================================================
-   Disabled Hunter — Runner (parallax + HUD + overlay start)
-   main.js  (full replacement)
-   ========================================================= */
-
-/* ---------- CONFIG ÚNICA QUE TE INTERESA ---------- */
+/* ====================== CONFIG QUE PEDISTE ====================== */
 const CFG = {
-  // Velocidad base del scroll (px por segundo)
-  scrollSpeed: 150,      // antes 220 (≈ -15%)
+  // Scroll
+  scrollSpeed: 150,     // antes 220 (~ -15%)
   scrollAccelEachSec: 0,
 
-  // Movimiento del jugador
-  playerSpeed: 300,          // velocidad lateral (px/s)
-  jump: -950,                // fuerza salto (px/s)
-  gravity: 2200,             // gravedad (px/s^2)
-  coyote: 0.18,              // “coyote time” para saltar justo al borde
+  // Player
+  playerSpeed: 300,
+  jump: -950,
+  gravity: 2200,
+  coyote: 0.18,
 
-  // Gaps de spawns en distancia recorrida (px de mundo)
+  // Spawns (distancia en px de mundo entre apariciones)
   gaps: {
     coin:  [280, 520],
     spec:  [1600, 2400],
@@ -24,7 +19,7 @@ const CFG = {
     obstChance: 0.55
   },
 
-  // HUD / juego
+  // HUD / combate
   powerMax: 100,
   beamCost: 20,
   beamSpeed: 900,
@@ -33,510 +28,486 @@ const CFG = {
   obst: { hitW: 65, hitH: 50, drawW: 112, drawH: 112 }
 };
 
-/* =========================================================
-   CANVAS & SCALING (16:9 virtual, pixel-perfect with DPR)
-   ========================================================= */
-const VIRTUAL_W = 960;
-const VIRTUAL_H = 540;
-
+/* ====================== CONSTANTES BÁSICAS ====================== */
 const CANVAS = document.getElementById('game');
 const CTX = CANVAS.getContext('2d', { alpha: false });
 
-let DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-let viewW = 0, viewH = 0, scale = 1, offsetX = 0, offsetY = 0;
-
-function fitCanvas() {
-  DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-
-  // Mantener 16:9 dentro de la ventana (letterbox si hace falta)
-  const ww = window.innerWidth;
-  const wh = window.innerHeight;
-  const targetRatio = VIRTUAL_W / VIRTUAL_H;
-
-  let cssW = ww, cssH = Math.round(ww / targetRatio);
-  if (cssH > wh) { cssH = wh; cssW = Math.round(wh * targetRatio); }
-
-  CANVAS.style.width = cssW + 'px';
-  CANVAS.style.height = cssH + 'px';
-
-  CANVAS.width  = Math.round(cssW * DPR);
-  CANVAS.height = Math.round(cssH * DPR);
-
-  viewW = CANVAS.width;
-  viewH = CANVAS.height;
-
-  scale = Math.min(viewW / VIRTUAL_W, viewH / VIRTUAL_H);
-  offsetX = Math.round((viewW - VIRTUAL_W * scale) * 0.5);
-  offsetY = Math.round((viewH - VIRTUAL_H * scale) * 0.5);
-
-  CTX.setTransform(1,0,0,1,0,0);
-  CTX.imageSmoothingEnabled = false; // pixel-crisp
+function resizeCanvas(){
+  CANVAS.width  = Math.floor(window.innerWidth);
+  CANVAS.height = Math.floor(window.innerHeight);
 }
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
 
-window.addEventListener('resize', fitCanvas);
-fitCanvas();
+const W = () => CANVAS.width;
+const H = () => CANVAS.height;
 
-/* =========================================================
-   ASSETS
-   ========================================================= */
+/* ====================== ASSETS ====================== */
 const IMG = {};
 const SFX = {};
 
 const IMAGES_TO_LOAD = {
-  bg:        'assets/tiles/bg_static_1920x1080.png',
-  fog:       'assets/tiles/tile_fog.png',
-  mid:       'assets/tiles/tile_middleok.png',
-  ground:    'assets/tiles/tile_ground_soft.png',
-  tomb:      'assets/tiles/tile_tomb_1x1.png',
-  maus:      'assets/tiles/tile_mausoleum_1x1.png',
-  player:    'player.png',
-  zombie:    'zombie.png',
-  coin:      'coin.png',
-  coinS:     'coin_special.png',
-  heart:     'assets/ui/ui_heart_32.png'
+  bg:   'assets/tiles/bg_static_1920x1080.png',
+  gnd:  'assets/tiles/tile_ground_soft.png',
+  mid:  'assets/tiles/tile_middleok.png',
+  fog:  'assets/tiles/tile_fog.png',
+
+  player: 'assets/player.png',
+  zombie: 'assets/zombie.png',
+  coin:   'assets/coin.png',
+  coinS:  'assets/coin_special.png', // opcional
+  heart:  'assets/ui/ui_heart_32.png',
+
+  tomb: 'assets/tiles/tile_tomb_1x1.png',
+  maus: 'assets/tiles/tile_mausoleum_1x1.png'
 };
 
-// SFX si los tienes con esos nombres
 const SOUNDS_TO_LOAD = {
-  coin:  'sfx_coin.wav',
-  pow:   'sfx_power.wav',
-  beam:  'sfx_beam.wav',
-  zdie:  'sfx_zombie_die.wav',
-  over:  'sfx_gameover.wav'
+  music:  'assets/music.mp3',
+  coin:   'assets/sfx_coin.wav',
+  power:  'assets/sfx_power.wav',
+  beam:   'assets/sfx_beam.wav',
+  zdie:   'assets/sfx_zombie_die.wav',
+  over:   'assets/sfx_gameover.wav'
 };
 
-function loadImages(map) {
-  const keys = Object.keys(map);
-  const jobs = keys.map(k => new Promise(res => {
-    const im = new Image(); im.onload = () => res(IMG[k] = im);
-    im.src = map[k];
-  }));
-  return Promise.all(jobs);
+function loadImages(dict){
+  const entries = Object.entries(dict);
+  return Promise.all(entries.map(([k,src]) =>
+    new Promise(res=>{
+      const im = new Image();
+      im.onload = ()=>{ IMG[k]=im; res(); };
+      im.onerror = ()=>{ console.warn('No carga img:', src); IMG[k]=null; res(); };
+      im.src = src + '?v=R18'; // cache-busting
+    })
+  ));
 }
-function loadAudio(map) {
-  const keys = Object.keys(map);
-  const jobs = keys.map(k => new Promise(res => {
-    const a = new Audio(); a.oncanplaythrough = () => res(SFX[k] = a);
-    a.src = map[k];
-  }));
-  return Promise.all(jobs);
+function loadAudio(dict){
+  const entries = Object.entries(dict);
+  return Promise.all(entries.map(([k,src]) =>
+    new Promise(res=>{
+      const a = new Audio();
+      a.oncanplaythrough = ()=>{ SFX[k]=a; res(); };
+      a.onerror = ()=>{ console.warn('No carga sfx:', src); SFX[k]=null; res(); };
+      a.src = src + '?v=R18';
+      a.load();
+    })
+  ));
+}
+function play(name, vol=1){
+  const a = SFX[name];
+  if(!a) return;
+  try{
+    const c = a.cloneNode();
+    c.volume = vol;
+    c.play().catch(()=>{});
+  }catch{}
 }
 
-/* =========================================================
-   WORLD STATE
-   ========================================================= */
-let running = false;
-let last = 0;
-let worldX = 0;             // distancia recorrida global (px)
-let scroll = 0;             // para parallax
-let score = 0, best = +(localStorage.getItem('dh_best')||0);
+/* ====================== UTILS ====================== */
+const rnd = (min,max)=> min + Math.random()*(max-min);
+const clamp=(v,a,b)=> Math.max(a,Math.min(b,v));
 
-let lives = 3;
-let power = CFG.powerMax;
+/* ====================== ESTADO DEL JUEGO ====================== */
+let running=false, started=false;
+let last=0, dt=0;
+let worldX=0, scroll=0, score=0, best= +(localStorage.getItem('best')||0);
+let lives=3, power=CFG.powerMax;
 
 const player = {
-  x: 160, y: 0, w: 48, h: 64,
-  vy: 0, onGround: false, coyote: 0
+  x: 160, y: 0, vx:0, vy:0,
+  w:64, h:64,
+  onGround:false,
+  coyote:0
 };
+const coins=[], zombs=[], shots=[], obsts=[];
 
-const coins = [];
-const zombies = [];
-const obstacles = [];
-const beams = [];
+function resetRun(){
+  running=false;
+  worldX=0; scroll=0; score=0; power=CFG.powerMax; lives=3;
+  coins.length=0; zombs.length=0; obsts.length=0; shots.length=0;
 
-let nextCoinAt = 0;
-let nextSpecAt = 0;
-let nextZomAt  = 0;
-let nextObsAt  = 0;
+  // posiciones de spawn (siguiente “hito” de distancia)
+  nextSpawn.coin = rnd(...CFG.gaps.coin);
+  nextSpawn.spec = rnd(...CFG.gaps.spec);
+  nextSpawn.zom  = rnd(...CFG.gaps.zom);
+  nextSpawn.obst = rnd(...CFG.gaps.obst);
 
-/* =========================================================
-   UTIL
-   ========================================================= */
-const rand = (a,b)=> a + Math.random()*(b-a);
-const rint = (a,b)=> (Math.random()*(b-a+1)|0)+a;
-
-function pushCoin(x) {
-  coins.push({x, y: groundY - 38, r: 16, special:false});
-}
-function pushSpec(x) {
-  coins.push({x, y: groundY - 38, r: 16, special:true});
-}
-function pushZombie(x) {
-  zombies.push({x, y: groundY - 62, w: 44, h: 60, alive:true});
-}
-function pushObstacle(x) {
-  const isM = Math.random() < 0.5;
-  obstacles.push({x, y: groundY - CFG.obst.drawH + 8, w: CFG.obst.hitW, h: CFG.obst.hitH, isM});
+  // piso base
+  player.vx=0; player.vy=0; player.y = groundY()-player.h; player.onGround=true; player.coyote=0;
 }
 
-/* =========================================================
-   INPUT
-   ========================================================= */
-const Keys = { left:false, right:false, jump:false, fire:false };
-window.addEventListener('keydown', e=>{
-  if (e.code==='ArrowLeft'  || e.code==='KeyA') Keys.left = true;
-  if (e.code==='ArrowRight' || e.code==='KeyD') Keys.right = true;
-  if (e.code==='ArrowUp'    || e.code==='Space' || e.code==='KeyW') Keys.jump = true;
-  if (e.code==='KeyX') Keys.fire = true;
+const nextSpawn = { coin:0,spec:0,zom:0,obst:0 };
+
+/* ====================== CONTROLES ====================== */
+const keys={left:0,right:0,up:0,shoot:0};
+window.addEventListener('keydown',e=>{
+  if(e.repeat) return;
+  if(e.code==='ArrowLeft')  keys.left=1;
+  if(e.code==='ArrowRight') keys.right=1;
+  if(e.code==='ArrowUp' || e.code==='Space') keys.up=1;
+  if(e.code==='KeyX') keys.shoot=1;
 });
-window.addEventListener('keyup', e=>{
-  if (e.code==='ArrowLeft'  || e.code==='KeyA') Keys.left = false;
-  if (e.code==='ArrowRight' || e.code==='KeyD') Keys.right = false;
-  if (e.code==='ArrowUp'    || e.code==='KeyW') Keys.jump = false;
-  if (e.code==='KeyX') Keys.fire = false;
+window.addEventListener('keyup',e=>{
+  if(e.code==='ArrowLeft')  keys.left=0;
+  if(e.code==='ArrowRight') keys.right=0;
+  if(e.code==='ArrowUp' || e.code==='Space') keys.up=0;
+  if(e.code==='KeyX') keys.shoot=0;
 });
 
-/* =========================================================
-   OVERLAY START / GAME OVER
-   ========================================================= */
-const overlay = document.getElementById('overlay');
-const startBtn = document.getElementById('startBtn');
-if (startBtn) startBtn.onclick = () => {
-  overlay.style.display = 'none';
-  start();
-};
+/* ====================== GEOMETRÍA ====================== */
+function groundY(){ return Math.round(H()*0.70); }     // línea del suelo para pies
+function layerY(){  return Math.round(H()*0.62); }     // línea media (donde dibujamos objetos)
 
-function gameOver() {
-  running = false;
-  SFX.over && SFX.over.play();
-  best = Math.max(best, score);
-  localStorage.setItem('dh_best', best);
-  overlay.innerHTML = `
-    <h1>Game Over</h1>
-    <p>Score: ${score} &nbsp; | &nbsp; Best: ${best}</p>
-    <button id="startBtn">Restart</button>
-  `;
-  overlay.style.display = 'flex';
-  document.getElementById('startBtn').onclick = ()=>{
-    overlay.style.display='none';
-    reset();
-    start();
-  };
-}
-
-/* =========================================================
-   LEVEL LAYOUT
-   ========================================================= */
-const groundY = 440; // altura del piso en virtual (ajusta si quieres)
-
-function reset() {
-  worldX = 0; scroll = 0; score = 0; lives = 3; power = CFG.powerMax;
-  coins.length = zombies.length = obstacles.length = beams.length = 0;
-  nextCoinAt = CFG.gaps.coin[0];
-  nextSpecAt = CFG.gaps.spec[0];
-  nextZomAt  = CFG.gaps.zom[0];
-  nextObsAt  = CFG.gaps.obst[0];
-  player.x = 160; player.y = groundY - player.h; player.vy = 0; player.onGround = true; player.coyote = 0;
-}
-
-function start() {
-  reset();
-  running = true;
-  last = performance.now();
-  requestAnimationFrame(loop);
-}
-
-/* =========================================================
-   UPDATE
-   ========================================================= */
-function spawnByProgress(dt) {
-  // Se basan en worldX (distancia recorrida)
-  if (worldX >= nextCoinAt) {
-    const gap = rand(...CFG.gaps.coin);
-    nextCoinAt += gap;
-    // a veces tiramos 3 monedas seguidas
-    const base = worldX + 800;
-    const n = Math.random() < 0.5 ? 3 : 1;
-    for (let i=0;i<n;i++) pushCoin(base + i*90);
+/* ====================== SPAWNS ====================== */
+function trySpawns(){
+  if(worldX>=nextSpawn.coin){
+    spawnCoin(false);
+    nextSpawn.coin = worldX + rnd(...CFG.gaps.coin);
   }
-  if (worldX >= nextSpecAt) {
-    nextSpecAt += rand(...CFG.gaps.spec);
-    pushSpec(worldX + 1000);
+  if(worldX>=nextSpawn.spec){
+    spawnCoin(true);
+    nextSpawn.spec = worldX + rnd(...CFG.gaps.spec);
   }
-  if (worldX >= nextZomAt) {
-    nextZomAt += rand(...CFG.gaps.zom);
-    pushZombie(worldX + 1000);
+  if(worldX>=nextSpawn.zom){
+    spawnZombie();
+    nextSpawn.zom = worldX + rnd(...CFG.gaps.zom);
   }
-  if (worldX >= nextObsAt) {
-    nextObsAt += rand(...CFG.gaps.obst);
-    if (Math.random() < CFG.gaps.obstChance) {
-      pushObstacle(worldX + 1000);
-    }
+  if(worldX>=nextSpawn.obst){
+    if(Math.random()<CFG.gaps.obstChance) spawnObst();
+    nextSpawn.obst = worldX + rnd(...CFG.gaps.obst);
   }
 }
 
-function rectsOverlap(a,b){
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+function spawnCoin(special){
+  coins.push({
+    x: W()+120, y: layerY()-32 - rnd(0,40), r:18,
+    special
+  });
+}
+function spawnZombie(){
+  zombs.push({
+    x: W()+140, y: groundY()-64, w:56, h:64, vx:-80
+  });
+}
+function spawnObst(){
+  obsts.push({
+    x: W()+150, y: groundY()-CFG.obst.drawH,
+    w: CFG.obst.hitW, h: CFG.obst.hitH,
+    type: (Math.random()<0.5?'tomb':'maus')
+  });
 }
 
-function update(dt) {
-  // progreso y velocidad global
-  const vx = CFG.scrollSpeed;
-  worldX += vx * dt;
-  scroll  += vx * dt;
+/* ====================== UPDATE ====================== */
+function update(dt){
+  // scroll del mundo
+  const spd = CFG.scrollSpeed;
+  worldX += spd*dt;
+  scroll  += spd*dt;
 
-  // spawns por progreso
-  spawnByProgress(dt);
+  trySpawns();
 
-  // jugador: input lateral
-  if (Keys.left)  player.x -= CFG.playerSpeed * dt;
-  if (Keys.right) player.x += CFG.playerSpeed * dt;
+  // movimiento lateral del jugador
+  player.vx = (keys.right-keys.left)*CFG.playerSpeed;
 
-  // gravedad y salto (con coyote time)
-  player.vy += CFG.gravity * dt;
-  player.y  += player.vy * dt;
-  if (player.onGround) player.coyote = CFG.coyote;
-  else player.coyote = Math.max(0, player.coyote - dt);
-
-  if ((Keys.jump) && (player.onGround || player.coyote>0)) {
+  // saltar (coyote time)
+  if(keys.up && (player.onGround || player.coyote>0)){
     player.vy = CFG.jump;
-    player.onGround = false;
-    player.coyote = 0;
+    player.onGround=false;
+    player.coyote=0;
   }
+  keys.up=0; // salto por pulsación
+
+  // gravedad
+  player.vy += CFG.gravity*dt;
+
+  // aplicar movimiento
+  player.x += player.vx*dt;
+  player.y += player.vy*dt;
 
   // suelo
-  if (player.y + player.h >= groundY) {
-    player.y = groundY - player.h;
-    player.vy = 0;
-    player.onGround = true;
-  } else {
-    player.onGround = false;
-  }
-
-  // Desplazamiento relativo de entidades (vienen hacia el jugador)
-  const rel = vx * dt;
-
-  // Obstáculos: mover a la izquierda, colisión sólida (no nos quedamos pegados)
-  for (let i=obstacles.length-1;i>=0;i--){
-    const o = obstacles[i];
-    o.x -= rel;
-
-    // hitbox (más pequeño que el dibujo)
-    const hit = {x:o.x + (CFG.obst.drawW - CFG.obst.hitW)/2, y:o.y + (CFG.obst.drawH - CFG.obst.hitH), w:CFG.obst.hitW, h:CFG.obst.hitH};
-
-    if (rectsOverlap({x:player.x,y:player.y,w:player.w,h:player.h}, hit)) {
-      // Resolución: si veníamos por la derecha, nos colocamos justo antes
-      if (player.x + player.w > hit.x && player.x < hit.x && player.vy >= 0) {
-        player.x = hit.x - player.w - 0.1;
-      }
-      // Si caemos encima, aterrizamos en el tope del obstáculo
-      if (player.y + player.h > hit.y && player.y < hit.y && player.vy > 0) {
-        player.y = hit.y - player.h;
-        player.vy = 0;
-        player.onGround = true;
-      }
+  const gy = groundY()-player.h;
+  if(player.y>=gy){
+    player.y=gy;
+    if(!player.onGround){
+      player.onGround=true;
     }
+    player.vy=0;
+  }else{
+    // aire
+    if(player.onGround===true){
+      player.onGround=false;
+      player.coyote = CFG.coyote; // activar ventana
+    }else{
+      player.coyote = Math.max(0, player.coyote-dt);
+    }
+  }
+  // límites horizontales
+  player.x = clamp(player.x, 40, W()*0.7);
 
-    if (o.x + CFG.obst.drawW < -200) obstacles.splice(i,1);
+  // disparo
+  if(keys.shoot && power>=CFG.beamCost){
+    keys.shoot=0;
+    power = Math.max(0, power-CFG.beamCost);
+    shots.push({ x: player.x+56, y: player.y+28, vx: CFG.beamSpeed, life:1.2 });
+    play('beam', .7);
   }
 
-  // Monedas
-  for (let i=coins.length-1;i>=0;i--){
-    const c = coins[i]; c.x -= rel;
-    const dx = (player.x + player.w/2) - c.x;
-    const dy = (player.y + player.h/2) - c.y;
-    if (dx*dx + dy*dy < (c.r+18)*(c.r+18)) {
+  // monedas
+  for(let i=coins.length-1;i>=0;i--){
+    const c = coins[i];
+    c.x -= spd*dt; // se mueven con el mundo
+    // recoger
+    const dx = (player.x+32) - c.x, dy = (player.y+32) - c.y;
+    if(dx*dx+dy*dy < (24*24)){
       score += c.special ? 200 : 50;
-      if (c.special) { power = Math.min(CFG.powerMax, power + 60); SFX.pow && SFX.pow.play();}
-      else { SFX.coin && SFX.coin.play(); }
+      if(c.special){ power = Math.min(CFG.powerMax, power+40); play('power', .9); }
+      else play('coin', .6);
       coins.splice(i,1);
-    } else if (c.x < -200) coins.splice(i,1);
+      continue;
+    }
+    if(c.x<-60) coins.splice(i,1);
   }
 
-  // Disparo
-  if (Keys.fire && power >= CFG.beamCost) {
-    // dispara corto (no continuo, simple rate-limit)
-    Keys.fire = false;
-    power = Math.max(0, power - CFG.beamCost);
-    beams.push({x: player.x + player.w, y: player.y + player.h/2 - 4, w: 24, h: 8, vx: CFG.beamSpeed});
-    SFX.beam && SFX.beam.play();
+  // obstáculos
+  for(let i=obsts.length-1;i>=0;i--){
+    const o = obsts[i];
+    o.x -= spd*dt;
+
+    // colisión “caja baja” para que se sienta piso
+    const left = o.x + (CFG.obst.drawW-CFG.obst.hitW)/2;
+    const top  = o.y + (CFG.obst.drawH-CFG.obst.hitH);
+    if (rectsOverlap(player.x,player.y,player.w,player.h, left,top,CFG.obst.hitW,CFG.obst.hitH)){
+      hurt();
+      obsts.splice(i,1);
+      continue;
+    }
+    if(o.x<-150) obsts.splice(i,1);
   }
 
-  // Beams
-  for (let i=beams.length-1;i>=0;i--){
-    const b = beams[i];
-    b.x += b.vx * dt;
-    // colisión con zombies (si hay tumba delante del zombie, la tumba bloquea)
-    let hitSomething = false;
-    for (let j=zombies.length-1;j>=0;j--){
-      const z = zombies[j];
-      if (!z.alive) continue;
+  // zombies
+  for(let i=zombs.length-1;i>=0;i--){
+    const z = zombs[i];
+    // los zombis también “vienen con el mundo”
+    z.x -= (spd*dt);
 
-      // si hay obstáculo entre el beam y el zombie, bloquea
-      const beamFront = b.x + b.w;
-      let blocked = false;
-      for (const o of obstacles) {
-        const left = o.x, right = o.x + CFG.obst.drawW;
-        if (left < beamFront && right > b.x) {
-          // Está en el corredor horizontal del disparo; si la altura cruza, bloquea:
-          const top = o.y, bot = o.y + CFG.obst.drawH;
-          if (b.y < bot && b.y + b.h > top) { blocked = true; break; }
-        }
-      }
-      if (blocked) continue;
+    // si hay lápida delante y el tiro pasa por ella, el zombi queda protegido (pared)
+    // → manejado al dibujar/disparar
 
-      if (rectsOverlap(b, {x:z.x,y:z.y,w:z.w,h:z.h})) {
-        z.alive = false; SFX.zdie && SFX.zdie.play(); score += 150; hitSomething = true;
+    // colisión con jugador
+    if(rectsOverlap(player.x,player.y,player.w,player.h, z.x,z.y,z.w,z.h)){
+      hurt();
+      zombs.splice(i,1);
+      continue;
+    }
+    if(z.x<-140) zombs.splice(i,1);
+  }
+
+  // disparos
+  for(let i=shots.length-1;i>=0;i--){
+    const s = shots[i];
+    s.x += s.vx*dt;
+    s.life -= dt;
+
+    // si golpea un obstáculo, se destruye
+    let blocked = false;
+    for(const o of obsts){
+      const left = o.x + (CFG.obst.drawW-CFG.obst.hitW)/2;
+      const top  = o.y + (CFG.obst.drawH-CFG.obst.hitH);
+      if(rectsOverlap(s.x-8, s.y-4, 16,8, left,top,CFG.obst.hitW,CFG.obst.hitH)){
+        blocked = true; break;
       }
     }
-    if (hitSomething || b.x > VIRTUAL_W + 200) beams.splice(i,1);
-  }
-
-  // Zombies
-  for (let i=zombies.length-1;i>=0;i--){
-    const z = zombies[i];
-    z.x -= rel * 0.9;
-    if (!z.alive) { zombies.splice(i,1); continue; }
-
-    // choque con jugador
-    if (rectsOverlap({x:player.x,y:player.y,w:player.w,h:player.h}, z)) {
-      lives -= 1;
-      z.alive = false;
-      if (lives <= 0) return gameOver();
+    if(blocked || s.life<=0 || s.x>W()+40){
+      shots.splice(i,1); continue;
     }
-    if (z.x < -200) zombies.splice(i,1);
+
+    // colisión con zombi
+    for(let j=zombs.length-1;j>=0;j--){
+      const z = zombs[j];
+      if(rectsOverlap(s.x-8,s.y-4,16,8, z.x,z.y,z.w,z.h)){
+        zombs.splice(j,1);
+        shots.splice(i,1);
+        score += 150;
+        play('zdie', .7);
+        break;
+      }
+    }
   }
 
-  // power se recarga lento
-  power = Math.min(CFG.powerMax, power + 12 * dt);
+  // subir score por avanzar
+  score += Math.floor(spd*dt*0.3);
+
+  // recarga pasiva de power
+  power = clamp(power + 12*dt, 0, CFG.powerMax);
 }
 
-/* =========================================================
-   RENDER
-   ========================================================= */
-function drawImageScaled(img, x, y, w, h) {
-  // transforma a espacio de canvas (DPR + scale + letterbox)
-  CTX.drawImage(
-    img,
-    Math.round(offsetX + x*scale),
-    Math.round(offsetY + y*scale),
-    Math.round(w*scale),
-    Math.round(h*scale)
-  );
+function rectsOverlap(ax,ay,aw,ah, bx,by,bw,bh){
+  return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by;
 }
 
-function render() {
-  // limpiar
-  CTX.fillStyle = '#0b0e13';
-  CTX.fillRect(0,0, CANVAS.width, CANVAS.height);
+function hurt(){
+  lives--;
+  if(lives<=0){
+    play('over', .8);
+    best = Math.max(best, score);
+    localStorage.setItem('best', best);
+    showOverlay(`Score: ${score}<br/>Best: ${best}`, 'Restart');
+  }
+}
 
-  // fondo fijo (cubre todo el área virtual, centrado)
-  drawImageScaled(IMG.bg, 0, 0, VIRTUAL_W, VIRTUAL_H);
-
-  // parallax middle (muy lento)
-  const midShift = (scroll * 0.15) % VIRTUAL_W;
-  for (let i=-1;i<=1;i++){
-    drawImageScaled(IMG.mid, -midShift + i*VIRTUAL_W, 240, VIRTUAL_W, 220);
+/* ====================== DRAW ====================== */
+function draw(){
+  // fondo estático (cover)
+  if(IMG.bg){
+    // escalado “cover”
+    const ratio = IMG.bg.width/IMG.bg.height;
+    const target = W()/H();
+    let dw,dh,dx,dy;
+    if(target>ratio){ dw = W(); dh = W()/ratio; dx = 0; dy = (H()-dh)/2; }
+    else{ dh = H(); dw = H()*ratio; dx = (W()-dw)/2; dy = 0; }
+    CTX.drawImage(IMG.bg, dx,dy,dw,dh);
+  }else{
+    CTX.fillStyle='#0b0e13';
+    CTX.fillRect(0,0,W(),H());
   }
 
-  // parallax fog (medio)
-  const fogShift = (scroll * 0.30) % VIRTUAL_W;
-  for (let i=-1;i<=1;i++){
-    drawImageScaled(IMG.fog, -fogShift + i*VIRTUAL_W, 360, VIRTUAL_W, 120);
-  }
+  // parallax medio
+  drawTiledLayer(IMG.mid, 0.15, H()*0.47, 1.1);
 
-  // ground (rápido, “pared/piso” pero pegado abajo)
-  const gShift = (scroll * 1.0) % VIRTUAL_W;
-  for (let i=-1;i<=1;i++){
-    drawImageScaled(IMG.ground, -gShift + i*VIRTUAL_W, groundY - 40, VIRTUAL_W, 120);
-  }
+  // Ground (suelo) – parallax rápido
+  drawTiledLayer(IMG.gnd, 0.55, H()*0.62, 1.0);
 
-  // Obstáculos (dibujo)
-  for (const o of obstacles) {
-    const sprite = o.isM ? IMG.maus : IMG.tomb;
-    drawImageScaled(sprite, o.x, o.y, CFG.obst.drawW, CFG.obst.drawH);
+  // Niebla
+  drawTiledLayer(IMG.fog, 0.30, H()*0.50, 0.9);
+
+  // Obstáculos
+  for(const o of obsts){
+    const img = (o.type==='tomb' ? IMG.tomb : IMG.maus) || null;
+    if(img) CTX.drawImage(img, Math.round(o.x), Math.round(o.y), CFG.obst.drawW, CFG.obst.drawH);
+    else { CTX.fillStyle='#333'; CTX.fillRect(o.x,o.y, CFG.obst.drawW, CFG.obst.drawH); }
   }
 
   // Monedas
-  for (const c of coins) {
-    drawImageScaled(c.special ? IMG.coinS : IMG.coin, c.x-16, c.y-16, 32, 32);
+  for(const c of coins){
+    const im = c.special && IMG.coinS ? IMG.coinS : IMG.coin;
+    if(im) CTX.drawImage(im, Math.round(c.x-24), Math.round(c.y-24), 48,48);
+    else { CTX.fillStyle = c.special?'#4cf':'#fc3'; CTX.beginPath(); CTX.arc(c.x,c.y,18,0,Math.PI*2); CTX.fill(); }
   }
 
-  // Zombies
-  for (const z of zombies) {
-    if (z.alive) drawImageScaled(IMG.zombie, z.x, z.y, z.w, z.h);
+  // Zombis
+  for(const z of zombs){
+    if(IMG.zombie) CTX.drawImage(IMG.zombie, Math.round(z.x), Math.round(z.y), z.w, z.h);
+    else { CTX.fillStyle='#6a3'; CTX.fillRect(z.x,z.y,z.w,z.h); }
+  }
+
+  // Disparos
+  CTX.fillStyle='#9cf';
+  for(const s of shots){
+    CTX.fillRect(Math.round(s.x-8), Math.round(s.y-4), 16,8);
   }
 
   // Player
-  drawImageScaled(IMG.player, player.x, player.y, player.w, player.h);
+  if(IMG.player) CTX.drawImage(IMG.player, Math.round(player.x), Math.round(player.y), player.w, player.h);
+  else { CTX.fillStyle='#ddd'; CTX.fillRect(player.x,player.y,player.w,player.h); }
 
-  // Beams
-  CTX.fillStyle = '#7cc3ff';
-  for (const b of beams) {
-    const x = Math.round(offsetX + b.x*scale);
-    const y = Math.round(offsetY + b.y*scale);
-    const w = Math.round(b.w*scale), h = Math.round(b.h*scale);
-    CTX.fillRect(x,y,w,h);
-  }
-
-  // HUD
-  // Score panel
-  CTX.fillStyle = 'rgba(0,0,0,.65)';
-  CTX.fillRect(offsetX + 16*scale, offsetY + 16*scale, 420*scale, 82*scale);
-  CTX.fillStyle = '#fff';
-  CTX.font = `${Math.round(36*scale)}px system-ui, -apple-system, sans-serif`;
-  CTX.fillText(`Score: ${score}`, offsetX + 28*scale, offsetY + 52*scale);
-  CTX.fillText(`Best:  ${best}`,  offsetX + 28*scale, offsetY + 90*scale);
-
-  // Hearts
-  const hx = offsetX + 470*scale, hy = offsetY + 26*scale, hs = 24*scale;
-  for (let i=0;i<3;i++){
-    CTX.globalAlpha = i < lives ? 1 : .25;
-    CTX.drawImage(IMG.heart, hx + i*(hs+10), hy, hs, hs);
-  }
-  CTX.globalAlpha = 1;
-
-  // Power bar
-  const barW = 360, barH = 12;
-  const bx = offsetX + 540*scale, by = offsetY + 40*scale;
-  CTX.fillStyle = '#3a3a3a';
-  CTX.fillRect(bx, by, barW*scale, barH*scale);
-  CTX.fillStyle = '#64a8ff';
-  const pw = (power/CFG.powerMax) * barW;
-  CTX.fillRect(bx, by, pw*scale, barH*scale);
+  drawHUD();
 }
 
-/* =========================================================
-   LOOP
-   ========================================================= */
-function loop(t) {
-  if (!running) return;
-  const dt = Math.min(0.033, (t - last) / 1000);
-  last = t;
+function drawTiledLayer(img, parallax, y, alpha=1){
+  if(!img) return;
+  const speed = (CFG.scrollSpeed*parallax);
+  const tileW = img.width;
+  const scale = (H()/1080)*1.0; // coherencia de tamaño
+  const drawW = tileW*scale;
+  const offset = -((scroll*parallax) % drawW);
+
+  CTX.save();
+  CTX.globalAlpha = alpha;
+  for(let x=offset-drawW; x<W()+drawW; x+=drawW){
+    CTX.drawImage(img, Math.round(x), Math.round(y), Math.round(drawW), Math.round(img.height*scale));
+  }
+  CTX.restore();
+}
+
+function drawHUD(){
+  // marcador
+  CTX.fillStyle='rgba(0,0,0,.65)';
+  CTX.fillRect(16,16, Math.min(560, W()-32), 100);
+  CTX.font='bold 40px system-ui, sans-serif';
+  CTX.fillStyle='#fff';
+  CTX.fillText(`Score: ${score}`, 26, 64);
+  CTX.fillText(`Best:  ${best}`, 26, 106);
+
+  // corazones
+  const hx = 620, hy=36;
+  for(let i=0;i<3;i++){
+    const x=hx+i*40;
+    if(i<lives && IMG.heart){
+      CTX.drawImage(IMG.heart, x, hy, 28,24);
+    }else{
+      CTX.globalAlpha = .25;
+      if(IMG.heart) CTX.drawImage(IMG.heart, x, hy, 28,24);
+      else { CTX.fillStyle='#f66'; CTX.fillRect(x,hy,24,20); }
+      CTX.globalAlpha = 1;
+    }
+  }
+
+  // barra de poder
+  const bw= Math.min(420, W()-360);
+  CTX.fillStyle='#3a3a3a';
+  CTX.fillRect( hx, 80, bw, 14 );
+  CTX.fillStyle='#5aa9ff';
+  CTX.fillRect( hx, 80, (power/CFG.powerMax)*bw, 14 );
+}
+
+/* ====================== LOOP ====================== */
+function loop(ts){
+  if(!running){ last=ts; requestAnimationFrame(loop); return; }
+  dt = Math.min(0.033, (ts-last)/1000); last=ts;
 
   update(dt);
-  render();
+  draw();
 
   requestAnimationFrame(loop);
 }
 
-/* =========================================================
-   BOOT (start after IMAGES only; audio loads best-effort)
-   ========================================================= */
-loadImages(IMAGES_TO_LOAD)
-  .then(() => {
-    // Cargar audio “fire-and-forget”; si falla, seguimos igual.
-    loadAudio(SOUNDS_TO_LOAD).catch(() => {});
+/* ====================== OVERLAY / START ====================== */
+function showOverlay(html, btnText='Start'){
+  const ov = document.getElementById('overlay');
+  ov.innerHTML = `
+    <h1>Disabled Hunter</h1>
+    <p>${html || 'Move: ← →  |  Jump: ↑ / Space  |  Shoot: X'}</p>
+    <button id="startBtn">${btnText}</button>
+  `;
+  ov.style.display='flex';
+  const b = document.getElementById('startBtn');
+  b.onclick = ()=>{
+    ov.style.display='none';
+    resetRun();
+    running=true;
+    if(SFX.music){ SFX.music.loop=true; SFX.music.volume=.35; SFX.music.play().catch(()=>{}); }
+  };
+}
 
-    // Mostrar overlay de inicio si existe
-    if (overlay) {
-      overlay.innerHTML = `
-        <h1>Disabled Hunter</h1>
-        <p>Move: ← →  |  Jump: ↑ / Space  |  Shoot: X</p>
-        <button id="startBtn">Start</button>
-      `;
-      overlay.style.display = 'flex';
-      const btn = document.getElementById('startBtn');
-      if (btn) btn.onclick = () => {
-        overlay.style.display = 'none';
-        start();
-      };
-    } else {
-      start();
-    }
-  })
-  .catch(err => {
-    console.error('Image load failed:', err);
-    // Como último recurso, intenta arrancar igual
-    start();
+/* ====================== BOOT SEGURO ====================== */
+(function boot(){
+  // “ping” visual por si algo se rompe: nunca pantalla negra total
+  CTX.fillStyle='#0b0e13';
+  CTX.fillRect(0,0,W(),H());
+  CTX.fillStyle='#55c';
+  CTX.fillRect(24,24,160,52);
+  CTX.fillStyle='#fff';
+  CTX.font='20px system-ui,sans-serif';
+  CTX.fillText('BOOT…', 38, 58);
+
+  loadImages(IMAGES_TO_LOAD).then(()=>{
+    // audio “best-effort”: si falla seguimos igual
+    loadAudio(SOUNDS_TO_LOAD).catch(()=>{});
+    showOverlay(); // mostramos pantalla de inicio
+    requestAnimationFrame(loop);
+  }).catch(err=>{
+    console.error('Falló carga de imágenes', err);
+    showOverlay('<b>Error de carga</b><br/>Pulsa para intentar');
   });
+})();
