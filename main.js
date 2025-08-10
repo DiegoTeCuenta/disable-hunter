@@ -99,9 +99,9 @@ let G = {
   nextCoin:0, nextSpec:0, nextZom:0, nextObst:0
 };
 
-const GROUND_Y = H*0.70;          // línea de piso donde pisan todo
-const MID_Y    = H*0.48;          // capa “middle” (cementerio borroso móvil)
-const FOG_Y    = H*0.62;          // niebla
+const GROUND_Y = H*0.66;          // línea de piso donde pisan todo
+const MID_Y    = H*0.54;          // capa “middle” (cementerio borroso móvil)
+const FOG_Y    = H*0.75;          // niebla
 const LAYER_SCROLL = { mid: 0.35, fog: 0.55, ground: 1.0 };
 
 // UI
