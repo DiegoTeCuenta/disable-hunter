@@ -24,8 +24,8 @@ const CFG = {
   obst: { hitW: 65, hitH: 50, drawW: 112, drawH: 112 },
 
   hud: {
-    scoreFont: 'bold 42px Inter, system-ui, sans-serif',
-    bestFont:  'bold 32px Inter, system-ui, sans-serif',
+    scoreFont: 'bold 32px Inter, system-ui, sans-serif',
+    bestFont:  'bold 22px Inter, system-ui, sans-serif',
     heartsY:  26,
     heartSize: 22,
     powerX:  560,
