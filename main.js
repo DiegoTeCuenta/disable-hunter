@@ -1,5 +1,5 @@
 // =========================
-// Disabled Hunter — main.js (Player-Driven Scroller)
+// Disabled Hunter — main.js (Player-Driven + Ahead Spawns)
 // =========================
 
 const canvas = document.getElementById("game");
@@ -10,30 +10,30 @@ addEventListener("resize", resize); resize();
 /* ----------------- T U N I N G  ----------------- */
 const CFG = {
   // Movimiento del jugador
-  playerSpeed: 6.0,     // velocidad horizontal con ←/→ (Z/C)
-  jump:       -21.0,    // más negativo = más alto
-  gravity:     1.12,    // caída (más bajo = más flotante)
-  coyote:      0.10,    // “perdón” para saltar tras dejar el suelo (segundos)
+  playerSpeed: 6.0,
+  jump:       -21.0,
+  gravity:     1.12,
+  coyote:      0.10,
 
-  // Parallax (qué tanto se desplaza cada capa respecto a tu avance)
+  // Parallax
   px: { middle: 0.25, fog: 0.45, ground: 0.85 },
 
-  // Spawns por distancia (en “pixeles de mundo”)
+  // Spawns por distancia recorrida
   spawn: {
-    coinMin: 280,  coinMax: 520,         // cada cuánto aparece una moneda normal
-    specMin: 1800, specMax: 2600,        // monedas especiales (power)
-    zomMin:  700,  zomMax:  1100,        // zombies
-    obsMin:  900,  obsMax:  1500,        // obstáculos (tumba/mausoleo)
-    obsChance: 0.55                       // prob. de que el slot sea obstáculo
+    coinMin: 280,  coinMax: 520,
+    specMin: 1800, specMax: 2600,
+    zomMin:  700,  zomMax:  1100,
+    obsMin:  900,  obsMax:  1500,
+    obsChance: 0.55
   },
 
-  // Obstáculos (hitbox amable, dibujo 128x128)
+  // Obstáculos
   obst: { hitW: 78, hitH: 66, drawW: 112, drawH: 112 },
 
   // Power / disparo
   powerMax: 100,
   beamCost: 20,
-  beamSpeed: 900 // px/seg
+  beamSpeed: 900
 };
 /* ------------------------------------------------ */
 
@@ -74,17 +74,14 @@ const state = {
   score:0, best:0, lives:3,
   power:0,
 
-  // Mundo
-  worldX:0,                // distancia recorrida (cámara)
-  nextCoinAt:  400,        // “hitos” de distancia para spawns
+  worldX:0,
+  nextCoinAt:  400,
   nextSpecAt:  1800,
   nextZomAt:   800,
   nextObsAt:   1000,
 
-  // Parallax offsets (se derivan de worldX, pero los separamos por suavidad)
   parallax: { mid:0, fog:0, gnd:0 },
 
-  // Player
   p: {
     x: 160, y:0, w:64, h:64,
     vx:0, vy:0,
@@ -130,7 +127,6 @@ function startGame(){
   state.zombies.length=0; state.coins.length=0;
   state.obstacles.length=0; state.beams.length=0; state.puffs.length=0;
 
-  // programar primeras distancias
   state.nextCoinAt = rand(CFG.spawn.coinMin, CFG.spawn.coinMax);
   state.nextSpecAt = rand(CFG.spawn.specMin, CFG.spawn.specMax);
   state.nextZomAt  = rand(CFG.spawn.zomMin,  CFG.spawn.zomMax);
@@ -147,19 +143,32 @@ function gameOver(){
   if (sndMusic){ sndMusic.pause(); }
 }
 
-/* ----------- Spawns por distancia ----------- */
-function spawnCoin(x, special=false){
-  state.coins.push({ x, y: groundY()-64 - rand(0,30), w:44, h:44, special });
+/* ----------- Spawns por distancia (ADELANTE) ----------- */
+// Distancias por delante de la cámara para aparecer en pantalla
+function ahead(distFactor=0.85, jitter=60){
+  return state.worldX + canvas.width*distFactor + rand(-jitter, jitter);
 }
-function spawnZombie(x){
-  state.zombies.push({ x, y: groundY()-64, w:64, h:64 });
+
+function spawnCoinAhead(special=false){
+  state.coins.push({
+    x: ahead(0.88, 90),
+    y: groundY()-64 - rand(0,30),
+    w:44, h:44, special
+  });
 }
-function spawnObstacle(x){
+function spawnZombieAhead(){
+  state.zombies.push({
+    x: ahead(0.93, 60),
+    y: groundY()-64, w:64, h:64
+  });
+}
+function spawnObstacleAhead(){
   const useM = chance(0.5);
   const img = useM ? imgMausoleum : imgTomb;
   const hbW = CFG.obst.hitW, hbH = CFG.obst.hitH;
   state.obstacles.push({
-    x, y: groundY()-hbH, w: hbW, h: hbH,
+    x: ahead(0.90, 40),
+    y: groundY()-hbH, w: hbW, h: hbH,
     drawW: CFG.obst.drawW, drawH: CFG.obst.drawH, img
   });
 }
@@ -173,7 +182,6 @@ function shoot(){
   p.shotCd = 0.18;
   state.power = Math.max(0, state.power - CFG.beamCost);
 
-  // Beam guardado en coordenadas de mundo:
   state.beams.push({
     x: state.worldX + p.x + p.w - 6,
     y: p.y + p.h*0.35,
@@ -189,11 +197,11 @@ function overlaps(a,b){
          a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
-/* ----------- Update (player-driven) ----------- */
+/* ----------- Update ----------- */
 function update(dt){
   const p = state.p;
 
-  // Movimiento horizontal por teclas
+  // Movimiento horizontal
   let mv = 0;
   if (keys.has("ArrowLeft") || keys.has("KeyZ")) mv -= 1;
   if (keys.has("ArrowRight")|| keys.has("KeyC")) mv += 1;
@@ -203,51 +211,50 @@ function update(dt){
   if (p.onGround) p.coyote = CFG.coyote;
   else if (p.coyote>0) p.coyote -= dt;
 
-  // Salto (S o ↑)
+  // Salto
   if ((keys.has("ArrowUp")||keys.has("KeyS")) && (p.onGround || p.coyote>0)){
     p.vy = p.jump; p.onGround=false; p.coyote=0;
   }
 
-  // Física vertical
+  // Física
   p.vy += CFG.gravity;
   p.y  += p.vy;
   if (p.y >= groundY()-p.h){ p.y = groundY()-p.h; p.vy=0; p.onGround=true; }
 
-  // Clamp lateral pantalla
+  // Clamp pantalla
   p.x += p.vx;
   p.x = clamp(p.x, 120, canvas.width - (120 + p.w));
 
-  // Cámara: la distancia recorrida crece con tu movimiento horizontal
+  // Avance del mundo
   state.worldX += p.vx;
 
-  // Parallax (en función de tu worldX)
+  // Parallax
   state.parallax.mid =  state.worldX * CFG.px.middle;
   state.parallax.fog =  state.worldX * CFG.px.fog;
   state.parallax.gnd =  state.worldX * CFG.px.ground;
 
-  // Invulnerabilidad y CD de disparo
   if (p.invul>0)  p.invul -= dt;
   if (p.shotCd>0) p.shotCd -= dt;
 
-  // ---------- Spawns basados en distancia ----------
+  // ---------- Spawns por distancia (y ADELANTE) ----------
   while (state.worldX >= state.nextCoinAt){
-    spawnCoin(state.nextCoinAt + rand(-40,40), false);
+    spawnCoinAhead(false);
     state.nextCoinAt += rand(CFG.spawn.coinMin, CFG.spawn.coinMax);
   }
   while (state.worldX >= state.nextSpecAt){
-    spawnCoin(state.nextSpecAt, true);
+    spawnCoinAhead(true);
     state.nextSpecAt += rand(CFG.spawn.specMin, CFG.spawn.specMax);
   }
   while (state.worldX >= state.nextZomAt){
-    spawnZombie(state.nextZomAt + rand(-30,30));
+    spawnZombieAhead();
     state.nextZomAt += rand(CFG.spawn.zomMin, CFG.spawn.zomMax);
   }
   while (state.worldX >= state.nextObsAt){
-    if (chance(CFG.spawn.obsChance)) spawnObstacle(state.nextObsAt);
+    if (chance(CFG.spawn.obsChance)) spawnObstacleAhead();
     state.nextObsAt += rand(CFG.spawn.obsMin, CFG.spawn.obsMax);
   }
 
-  // ---------- Colisiones y lógica de entidades ----------
+  // ---------- Lógica entidades ----------
   const camL = state.worldX - 80;
   const camR = state.worldX + canvas.width + 80;
 
@@ -287,7 +294,7 @@ function update(dt){
       }
     }
 
-    // Golpe al jugador (hitbox amable centrada)
+    // Golpe al jugador (hitbox amable)
     const hb = { x: z.x+10, y:z.y+10, w:z.w-20, h:z.h-20 };
     const pr = { x: state.worldX + p.x, y:p.y, w:p.w, h:p.h };
     if (p.invul<=0 && overlaps(pr, hb)){
@@ -311,14 +318,14 @@ function update(dt){
     }
   }
 
-  // Beams (mueven en coords de mundo)
+  // Beams
   for (let i=state.beams.length-1;i>=0;i--){
     const b = state.beams[i];
     b.x += CFG.beamSpeed * dt;
     if (b.x > camR + 60) state.beams.splice(i,1);
   }
 
-  // FX puffs
+  // FX
   for (let i=state.puffs.length-1;i>=0;i--){
     const f = state.puffs[i];
     f.frame++;
@@ -343,46 +350,38 @@ function render(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.fillStyle="#0a0d12"; ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  // Parallax: calculado desde worldX (ya mapeado en state.parallax)
   const midY = groundY()-220;
   drawTiled(imgMid, midY, state.parallax.mid, 0.55);
-  drawTiled(imgFog, groundY()-180, state.parallax.fog, 0.85); // detrás
+  drawTiled(imgFog, groundY()-180, state.parallax.fog, 0.85);
   drawTiled(imgGnd, groundY()-imgGnd.height, state.parallax.gnd, 1);
 
-  // Convertidor de mundo→pantalla: x_screen = x_world - worldX
   const X = (wx)=> wx - state.worldX;
 
-  // Monedas
   for (const c of state.coins){
     ctx.drawImage(c.special?imgCoinS:imgCoin, X(c.x), c.y, c.w, c.h);
   }
 
-  // Obstáculos (dibujar 128 pero colisionar con hitbox 78x66)
   for (const o of state.obstacles){
     const dx = X(o.x) - (o.drawW - o.w)/2;
     const dy = o.y - (o.drawH - o.h);
     ctx.drawImage(o.img, dx, dy, o.drawW, o.drawH);
   }
 
-  // Zombies
   for (const z of state.zombies){
     ctx.drawImage(imgZombie, X(z.x), z.y, z.w, z.h);
   }
 
-  // Beams (rectangulito celeste)
   ctx.fillStyle="#7ec8ff";
   for (const b of state.beams){
     ctx.fillRect(X(b.x), b.y, b.w, b.h);
   }
 
-  // Puffs (fade)
   for (const f of state.puffs){
     ctx.globalAlpha = 1 - f.frame/f.frames;
     ctx.drawImage(imgPuff, X(f.x), f.y, 64, 64);
     ctx.globalAlpha = 1;
   }
 
-  // Player (parpadeo si invul)
   if (state.p.invul>0) ctx.globalAlpha = 0.6;
   ctx.drawImage(imgPlayer, state.p.x, state.p.y, state.p.w, state.p.h);
   ctx.globalAlpha = 1;
@@ -395,7 +394,6 @@ function render(){
   ctx.fillText(`Score: ${Math.floor(state.score)}`, 28, 50);
   ctx.fillText(`Best:  ${Math.floor(state.best)}`,  28, 86);
 
-  // Vidas
   for (let i=0;i<3;i++){
     ctx.beginPath();
     ctx.arc(500 + i*26, 40, 9, 0, Math.PI*2);
@@ -403,12 +401,10 @@ function render(){
     ctx.fill();
   }
 
-  // Barra de poder
   const barMax=240, bx=580, by=32;
   ctx.fillStyle="#333"; ctx.fillRect(bx,by,barMax,12);
   ctx.fillStyle="#58a6ff"; ctx.fillRect(bx,by,Math.round(barMax*(state.power/CFG.powerMax)),12);
 
-  // Pantallas
   if (!state.started || state.over){
     ctx.fillStyle="rgba(0,0,0,.6)";
     ctx.fillRect(0,0,canvas.width,canvas.height);
