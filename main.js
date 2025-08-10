@@ -9,8 +9,8 @@ addEventListener("resize", fit); fit();
 /* ---------- CONFIG ÚNICA QUE TE INTERESA ---------- */
 const CFG = {
   // Velocidad base del scroll (px por segundo)
-  scrollSpeed: 220,          // <-- MÁS BAJO = MÁS LENTO (prueba 180–260)
-  scrollAccelEachSec: 0,     // aceleración opcional (0 = fijo)
+scrollSpeed: 187,      // antes 220 (≈ -15%)
+scrollAccelEachSec: 0,
 
   // Movimiento del jugador
   playerSpeed: 300,          // velocidad lateral (px/s)
