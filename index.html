@@ -1,19 +1,29 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Disabled Hunter</title>
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disabled Hunter</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas {
+            border: 2px solid #fff;
+            background-color: #222;
+        }
+    </style>
 </head>
 <body>
-  <div id="overlay">
-    <h1>Disabled Hunter</h1>
-    <p>Move: ← → or Z/C · Up/Down: ↑ ↓ or S/X · Attack: SPACE</p>
-    <button id="startBtn">Start</button>
-  </div>
+    <!-- Lienzo del juego -->
+    <canvas id="game"></canvas>
 
-  <canvas id="game" width="960" height="540"></canvas>
-  <script src="main.js"></script>
+    <!-- Script principal -->
+    <script src="main.js"></script>
 </body>
 </html>
