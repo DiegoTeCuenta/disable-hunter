@@ -129,11 +129,11 @@ function spawnIfReached(){
     S.coins.push({ x:S.nextSpec, y: gy()-92-rand(0,24), w:56, h:56, special:true });
     S.nextSpec += rand(...g.spec);
   }
-  // Zombie
-  while (S.nextZom < rightEdgeWorld){
-    S.zombies.push({ x:S.nextZom, y: gy()-64, w:64, h:64 });
-    S.nextZom += rand(...g.zom);
-  }
+// Zombie
+while (S.nextZom < rightEdgeWorld){
+  S.zombies.push({ x:S.nextZom, y: gy()-60, w:56, h:60 }); // antes 64x64
+  S.nextZom += rand(...g.zom);
+}
   // Obstacles
   while (S.nextObst < rightEdgeWorld){
     if (chance(g.obstChance)){
