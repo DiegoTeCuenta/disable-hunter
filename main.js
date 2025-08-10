@@ -511,10 +511,13 @@ function loop(t) {
 }
 
 /* =========================================================
-   BOOT
+   BOOT (start after IMAGES only; audio loads best-effort)
    ========================================================= */
-Promise.all([loadImages(IMAGES_TO_LOAD), loadAudio(SOUNDS_TO_LOAD)])
-  .then(()=>{
+loadImages(IMAGES_TO_LOAD)
+  .then(() => {
+    // Cargar audio “fire-and-forget”; si falla, seguimos igual.
+    loadAudio(SOUNDS_TO_LOAD).catch(() => {});
+
     // Mostrar overlay de inicio si existe
     if (overlay) {
       overlay.innerHTML = `
@@ -523,11 +526,17 @@ Promise.all([loadImages(IMAGES_TO_LOAD), loadAudio(SOUNDS_TO_LOAD)])
         <button id="startBtn">Start</button>
       `;
       overlay.style.display = 'flex';
-      document.getElementById('startBtn').onclick = ()=>{
-        overlay.style.display='none';
+      const btn = document.getElementById('startBtn');
+      if (btn) btn.onclick = () => {
+        overlay.style.display = 'none';
         start();
       };
     } else {
       start();
     }
+  })
+  .catch(err => {
+    console.error('Image load failed:', err);
+    // Como último recurso, intenta arrancar igual
+    start();
   });
