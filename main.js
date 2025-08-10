@@ -28,17 +28,61 @@ const CFG = {
   obst: { hitW: 65, hitH: 50, drawW: 112, drawH: 112 }
 };
 
-/* =================================================== */
-/* ====================== CORE ======================= */
-/* =================================================== */
+/* ============================================ */
+/* ================== CORE =================== */
+/* ============================================ */
 
 const CANVAS = document.getElementById('game');
 const CTX = CANVAS.getContext('2d');
+
+// Tamaño fijo del mundo del juego
+const GAME_WIDTH = 960;
+const GAME_HEIGHT = 540;
+
+CANVAS.width = GAME_WIDTH;
+CANVAS.height = GAME_HEIGHT;
+
 const W = CANVAS.width;
 const H = CANVAS.height;
 
 const IMG = {};
 const SFX = {};
+
+// Cargar fondo estático
+IMG.bg = new Image();
+IMG.bg.src = 'bg_static_1920x1080.png';
+
+// Ajuste de escala visual
+window.addEventListener('resize', resizeCanvas);
+function resizeCanvas() {
+    const scale = Math.min(window.innerWidth / GAME_WIDTH, window.innerHeight / GAME_HEIGHT);
+    CANVAS.style.width = (GAME_WIDTH * scale) + 'px';
+    CANVAS.style.height = (GAME_HEIGHT * scale) + 'px';
+}
+resizeCanvas();
+
+// Función para dibujar fondo
+function drawBackground() {
+    // Centrar el fondo (1920x1080 → 960x540)
+    CTX.drawImage(
+        IMG.bg,
+        0, 0, 1920, 1080, // tamaño original
+        0, 0, GAME_WIDTH, GAME_HEIGHT // tamaño destino
+    );
+}
+
+// Ejemplo de bucle de render
+function gameLoop() {
+    drawBackground();
+
+    // Aquí irían tus otros dibujos del juego
+    requestAnimationFrame(gameLoop);
+}
+
+IMG.bg.onload = () => {
+    gameLoop();
+};
+
 
 const SPRITES = {
   bg:           'assets/tiles/bg_static_1920x1080.png',
