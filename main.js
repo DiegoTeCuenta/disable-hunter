@@ -1,9 +1,9 @@
 // =========================
-// Disabled Hunter — DEBUG BUILD R13
+// Disabled Hunter — DEBUG BUILD R14
 // D=walls, B=play-band, L=spawn zombies x3, G=god mode
 // =========================
 
-const BUILD_TAG = 'R13';
+const BUILD_TAG = 'R14';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -95,10 +95,11 @@ let beam = null;
 let specialCooldown = 240;
 let zombieSpawnTimer = 0;
 
-// **gracia de arranque** (evita quedar pegado)
-let startGraceFrames = 0;
+// gracia de arranque (no colisiona con muros)
+let startGraceFrames = 40;
 
 // ---- Maze (rects) ----
+// BORDES y 3 mausoleos centrales. **Eliminé** los 3 bloques inferiores.
 const walls = [
   {x:0,y:-20,w:960,h:20},
   {x:0,y:508,w:960,h:32},
@@ -109,17 +110,13 @@ const walls = [
   {x:420,y:260,w:180,h:80},
   {x:660,y:260,w:180,h:80},
 
-  {x:120,y:470,w:160,h:34},
-  {x:360,y:470,w:160,h:34},
-  {x:600,y:470,w:160,h:34},
-
   {x:36,y:300,w:120,h:60},
   {x:804,y:320,w:120,h:60}
 ];
 
-// Banda vertical amplia
-const playMinY = 120;
-const playMaxY = 530;
+// Banda vertical MÁS ALTA
+const playMinY = 90;
+const playMaxY = 540;
 
 // ---- Overlay ----
 const overlay = document.getElementById('overlay');
@@ -179,20 +176,17 @@ function lineClear(x1,y1,x2,y2, steps=24){
   return true;
 }
 
-// Buscar un punto libre para el jugador al iniciar
 function safeStartPlayer(){
   const candidates = [
     {x:80, y:360}, {x:80, y:320}, {x:80, y:400},
-    {x:110, y:360}, {x:140, y:360}, {x:110, y:320}
+    {x:120, y:360}, {x:140, y:360}, {x:110, y:320}
   ];
   for (const c of candidates){
     const r = {x:c.x, y:c.y, w:player.w, h:player.h};
     if (!rectHitsAnyWall(r)) { player.x=c.x; player.y=c.y; return; }
   }
-  // fallback: fuerza dentro de la franja
   player.x = 80; player.y = clamp(360, playMinY, playMaxY-player.h);
 }
-
 function unstick(obj){
   let tries = 40;
   while (rectHitsAnyWall(obj) && tries--){
@@ -209,7 +203,7 @@ function reset(){
 
   safeStartPlayer();
   unstick(player);
-  startGraceFrames = 20; // <<< gracia de arranque
+  startGraceFrames = 40;
 
   zombies.length = 0; coins.length = 0; specialCoin = null;
   specialCooldown = 60; zombieSpawnTimer = 0;
@@ -250,22 +244,22 @@ function trySpawnSpecial(){
   }
 }
 
-// zombi dentro del mapa y lejos del jugador
 function safeZombieStart(fromRight, w=72, h=72){
   const pad = 8;
   let x = fromRight ? (canvas.width - w - pad) : pad;
 
+  const minDist = 260; // ↑ distancia mínima
   const distX = Math.abs((player.x + player.w/2) - (x + w/2));
-  if (distX < 220) x = (x === pad) ? (canvas.width - w - pad) : pad;
+  if (distX < minDist) x = (x === pad) ? (canvas.width - w - pad) : pad;
 
-  let y = clamp( 180 + Math.random()*260, playMinY+8, playMaxY - h - 8 );
+  let y = clamp( 160 + Math.random()*300, playMinY+8, playMaxY - h - 8 );
   let tries = 16;
   while (rectHitsAnyWall({x,y,w,h}) && tries--){
     y = clamp(y + (Math.random()<0.5?-18:18), playMinY+8, playMaxY - h - 8);
   }
   const pcx = player.x + player.w/2, pcy = player.y + player.h/2;
   const zcx = x + w/2, zcy = y + h/2;
-  if (Math.hypot(zcx-pcx, zcy-pcy) < 220){
+  if (Math.hypot(zcx-pcx, zcy-pcy) < minDist){
     x = (x === pad) ? (canvas.width - w - pad) : pad;
   }
   return {x,y};
@@ -310,11 +304,9 @@ function update(dt){
   if (keys['arrowdown'] || keys['x'])  { dy += player.speed; }
 
   if (startGraceFrames > 0){
-    // durante la gracia: mover sin colisión para “despegarse”
     player.x += dx; player.y += dy;
     startGraceFrames--;
   } else {
-    // con colisión normal
     let next = {x: player.x + dx, y: player.y, w: player.w, h: player.h};
     if (!rectHitsAnyWall(next)) player.x = next.x;
     next = {x: player.x, y: player.y + dy, w: player.w, h: player.h};
@@ -327,7 +319,7 @@ function update(dt){
   if (state.hunter>0) state.hunter--;
   if (player.inv>0)   player.inv--;
 
-  // Spawns de zombies continuos (máx 4)
+  // Spawns continuos
   zombieSpawnTimer += dt;
   if (zombieSpawnTimer > 1000){
     const alive = zombies.filter(z=>z.alive).length;
@@ -495,7 +487,7 @@ function drawHUD(){
   ctx.fillStyle = '#9fdcff';
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillText(`BUILD ${BUILD_TAG}  |  D: walls  B: play-band  L: zombies  G: god=${godMode?'ON':'OFF'}`, 20, 68);
-  
+
   if (state.hunter>0){
     const max = 8*60, pct = Math.max(0, Math.min(1, state.hunter/max));
     ctx.fillStyle = '#9fdcff'; ctx.fillRect(205, 22, 110*pct, 10);
