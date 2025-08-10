@@ -1,4 +1,4 @@
-/* ===================== Disabled Hunter — main.js (SAFE RZ4) ================== */
+/* ===================== Disabled Hunter — main.js (SAFE RZ5) ================== */
 /* ----------------------- CONFIG (tus valores) -------------------------------- */
 const CFG = {
   scrollSpeed: 150,
@@ -80,8 +80,17 @@ function loadImage(key, src, size={w:64,h:64}) {
   });
 }
 function loadAudio(key, src, volume=1){
-  try{ const a=new Audio(src); a.volume=volume; SFX[key]=a; }catch{}
+  try{
+    const a=new Audio(src);
+    a.preload = 'auto';
+    a.volume = volume;
+    SFX[key]=a;
+  }catch{}
 }
+
+// helpers SFX seguros (evitan optional chaining en asignación)
+function sfxReset(name){ const a=SFX[name]; if(a){ a.currentTime=0; } }
+function sfxPlay(name){ const a=SFX[name]; if(a && a.play){ a.play(); } }
 
 async function loadAll(){
   await Promise.all([
@@ -102,7 +111,6 @@ async function loadAll(){
     loadImage('fx_beam','assets/fx/fx_beam_128.png', {w:128,h:16}),
   ]);
 
-  // SFX (si faltan, no pasa nada)
   loadAudio('coin',  'assets/sfx_coin.wav',  0.35);
   loadAudio('power', 'assets/sfx_power.wav', 0.45);
   loadAudio('beam',  'assets/sfx_beam.wav',  0.45);
@@ -179,7 +187,7 @@ function update(dt){
   updateEntities(dt);
 
   if (player.lives<=0){
-    SFX.over?.play?.();
+    sfxPlay('over');
     localStorage.setItem('dh_best', Math.max(bestScore, score));
     bestScore = Number(localStorage.getItem('dh_best')||0);
     running=false;
@@ -217,8 +225,13 @@ function updateEntities(dt){
     const c=coins[i];
     const cx=c.x-worldX;
     if (AABB(player.x,player.y,36,48, cx-16,c.y-16,32,32)){
-      if (c.sp){ player.power = clamp(player.power+35,0,CFG.powerMax); SFX.power?.currentTime=0; SFX.power?.play?.(); }
-      else { score+=10; SFX.coin?.currentTime=0; SFX.coin?.play?.(); }
+      if (c.sp){
+        player.power = clamp(player.power+35,0,CFG.powerMax);
+        sfxReset('power'); sfxPlay('power');
+      } else {
+        score+=10;
+        sfxReset('coin'); sfxPlay('coin');
+      }
       coins.splice(i,1);
       continue;
     }
@@ -254,7 +267,7 @@ function AABB(ax,ay,aw,ah, bx,by,bw,bh){
 function shootBeam(){
   const x=player.x+34, y=player.y+30;
   beams.push({x,y,dx:1,dy:0,len:220});
-  SFX.beam?.currentTime=0; SFX.beam?.play?.();
+  sfxReset('beam'); sfxPlay('beam');
 }
 function updateBeams(dt){
   for(let i=beams.length-1;i>=0;i--){
@@ -275,7 +288,8 @@ function updateBeams(dt){
       const z=zombies[j]; if(!z.alive) continue;
       const zx=z.x-worldX;
       if (AABB(b.x,b.y-4,b.len,8, zx,z.y,z.w,z.h)){
-        z.alive=false; zombies.splice(j,1); score+=25; SFX.zdie?.currentTime=0; SFX.zdie?.play?.();
+        z.alive=false; zombies.splice(j,1); score+=25;
+        sfxReset('zdie'); sfxPlay('zdie');
       }
     }
     if (b.x>W+80) beams.splice(i,1);
@@ -374,7 +388,6 @@ window.addEventListener('error', (e)=>{
 });
 
 loadAll().then(()=>{
-  // Si faltó algo, igual arrancamos y te lo mostramos en el overlay
   showOverlay('Disabled Hunter', MISSING.length ? `Faltan archivos:\n${MISSING.join('\n')}` : 'Move: ← →  |  Jump: Space  |  Shoot: X');
   requestAnimationFrame(tick);
 });
