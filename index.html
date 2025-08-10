@@ -1,29 +1,23 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Disabled Hunter</title>
-    <style>
-        body {
-            margin: 0;
-            background-color: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        canvas {
-            border: 2px solid #fff;
-            background-color: #222;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Disabled Hunter</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <!-- Lienzo del juego -->
-    <canvas id="game" width="960" height="540"></canvas>
+  <!-- Overlay de inicio / pausa / game over -->
+  <div id="overlay" class="overlay" style="display:none">
+    <h1>Disabled Hunter</h1>
+    <p>Move: ← →  |  Jump: ↑ / Space  |  Shoot: X</p>
+    <button id="startBtn">Start</button>
+  </div>
 
-    <!-- Script principal -->
-    <script src="main.js"></script>
+  <!-- Lienzo del juego (ocupa toda la ventana) -->
+  <canvas id="game"></canvas>
+
+  <!-- Script principal (con cache-busting por si Netlify/GitHub cachean) -->
+  <script src="main.js?v=R18"></script>
 </body>
 </html>
