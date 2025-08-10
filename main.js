@@ -1,4 +1,4 @@
-/* ===================== Disabled Hunter — main.js (SAFE RZ5) ================== */
+/* ===================== Disabled Hunter — main.js (SAFE RZ6) ================== */
 /* ----------------------- CONFIG (tus valores) -------------------------------- */
 const CFG = {
   scrollSpeed: 150,
@@ -47,10 +47,13 @@ function fitCanvas(){
 fitCanvas();
 addEventListener('resize', fitCanvas);
 
-/* -------------------- Parallax anchors (puedes reajustar) ------------------- */
-const GROUND_Y = () => H*0.66;
-const MID_Y    = () => H*0.12;
-const FOG_Y    = () => H*0.50;
+/* -------------------- Parallax anchors + offset vertical -------------------- */
+/* Si “todo el juego” te queda muy arriba/abajo, ajusta SOLO este offset:   */
+let Y_OFFSET = 40;   // + baja todo / - lo sube (en px)
+
+const GROUND_Y = () => H*0.66 + Y_OFFSET;
+const MID_Y    = () => H*0.12 + Y_OFFSET;
+const FOG_Y    = () => H*0.50 + Y_OFFSET;
 const LAYER_SCROLL = { mid:0.35, fog:0.55, ground:1.0 };
 
 /* --------------------- Assets con tolerancia a fallos ----------------------- */
@@ -87,8 +90,7 @@ function loadAudio(key, src, volume=1){
     SFX[key]=a;
   }catch{}
 }
-
-// helpers SFX seguros (evitan optional chaining en asignación)
+// helpers SFX seguros
 function sfxReset(name){ const a=SFX[name]; if(a){ a.currentTime=0; } }
 function sfxPlay(name){ const a=SFX[name]; if(a && a.play){ a.play(); } }
 
@@ -99,7 +101,7 @@ async function loadAll(){
     loadImage('fog',   'assets/tiles/tile_fog.png',            {w:960,h:200}),
     loadImage('ground','assets/tiles/tile_ground_soft.png',    {w:960,h:120}),
 
-    // Si estos nombres no existen en tu repo, igual arranca con placeholders:
+    // entidades
     loadImage('player','assets/player.png',  {w:56,h:72}),
     loadImage('zombie','assets/zombie.png',  {w:50,h:62}),
     loadImage('coin',  'assets/coin.png',    {w:32,h:32}),
@@ -109,6 +111,9 @@ async function loadAll(){
     loadImage('maus',  'assets/tiles/tile_mausoleum_1x1.png', {w:112,h:112}),
 
     loadImage('fx_beam','assets/fx/fx_beam_128.png', {w:128,h:16}),
+
+    // corazón del HUD (si falta, se dibuja fallback)
+    loadImage('heart','assets/ui/ui_heart_32.png',{w:32,h:32})
   ]);
 
   loadAudio('coin',  'assets/sfx_coin.wav',  0.35);
@@ -166,6 +171,7 @@ function update(dt){
   worldX += scrollSpeed*dt;
   scrollSpeed += CFG.scrollAccelEachSec*dt;
 
+  // movimiento lateral
   if (keys['arrowright']) player.x += CFG.playerSpeed*dt;
   if (keys['arrowleft'])  player.x -= CFG.playerSpeed*dt;
   player.x = clamp(player.x, 80, W*0.6);
@@ -177,11 +183,16 @@ function update(dt){
   if (player.y >= gy){ player.y=gy; player.vy=0; player.onGround=true; player.coyote=CFG.coyote; }
   else { player.onGround=false; player.coyote-=dt; }
 
-  // salto
-  if (keys[' '] && (player.onGround || player.coyote>0)){ player.vy=CFG.jump; player.onGround=false; player.coyote=0; }
+  // salto (↑ / W / Z / C)
+  if ((keys['arrowup']||keys['w']||keys['z']||keys['c']) && (player.onGround || player.coyote>0)){
+    player.vy=CFG.jump; player.onGround=false; player.coyote=0;
+  }
 
-  // disparo X (solo si power disponible)
-  if (keys['x'] && player.power>=CFG.beamCost){ player.power-=CFG.beamCost; shootBeam(); keys['x']=false; }
+  // disparo (Espacio o X) si hay power
+  if ((keys[' ']||keys['x']) && player.power>=CFG.beamCost){
+    player.power-=CFG.beamCost; shootBeam();
+    keys[' ']=false; keys['x']=false;
+  }
 
   spawnWhile();
   updateEntities(dt);
@@ -229,8 +240,7 @@ function updateEntities(dt){
         player.power = clamp(player.power+35,0,CFG.powerMax);
         sfxReset('power'); sfxPlay('power');
       } else {
-        score+=10;
-        sfxReset('coin'); sfxPlay('coin');
+        score+=10; sfxReset('coin'); sfxPlay('coin');
       }
       coins.splice(i,1);
       continue;
@@ -315,6 +325,21 @@ function drawBeams(){
   }
   CTX.restore();
 }
+function drawHearts(){
+  const s=CFG.hud.heartSize, y=CFG.hud.heartsY;
+  const hasHeart = IMG.heart && IMG.heart.width;
+  for(let i=0;i<3;i++){
+    CTX.globalAlpha=i<player.lives?1:0.25;
+    if (hasHeart){
+      CTX.drawImage(IMG.heart, 480+i*(s+8)-(s/2), y-(s/2), s, s);
+    }else{
+      // fallback: puntito
+      CTX.fillStyle=i<player.lives?'#e14':'#555';
+      CTX.beginPath(); CTX.arc(480+i*(s+8), y+12, s/2, 0, Math.PI*2); CTX.fill();
+    }
+  }
+  CTX.globalAlpha=1;
+}
 function drawHUD(){
   CTX.save();
   CTX.fillStyle='rgba(0,0,0,.65)'; CTX.fillRect(16,16,420,92);
@@ -322,13 +347,7 @@ function drawHUD(){
   CTX.font=CFG.hud.bestFont; CTX.fillText(`Best: ${bestScore}`,28,98);
   CTX.restore();
 
-  const s=CFG.hud.heartSize, y=CFG.hud.heartsY;
-  for(let i=0;i<3;i++){
-    CTX.globalAlpha=i<player.lives?1:0.25;
-    CTX.fillStyle=i<player.lives?'#e14':'#555';
-    CTX.beginPath(); CTX.arc(480+i*(s+8), y+12, s/2, 0, Math.PI*2); CTX.fill();
-  }
-  CTX.globalAlpha=1;
+  drawHearts();
 
   const bx=CFG.hud.powerX, by=CFG.hud.powerY, bw=CFG.hud.powerW, bh=CFG.hud.powerH;
   CTX.fillStyle='rgba(0,0,0,.45)'; CTX.fillRect(bx,by,bw,bh);
@@ -388,7 +407,11 @@ window.addEventListener('error', (e)=>{
 });
 
 loadAll().then(()=>{
-  showOverlay('Disabled Hunter', MISSING.length ? `Faltan archivos:\n${MISSING.join('\n')}` : 'Move: ← →  |  Jump: Space  |  Shoot: X');
+  showOverlay(
+    'Disabled Hunter',
+    (MISSING.length ? `Faltan archivos:\n${MISSING.join('\n')}\n\n` : '') +
+    'Controles: ← → moverse  |  ↑ / W / Z / C para saltar  |  Espacio / X disparar'
+  );
   requestAnimationFrame(tick);
 });
 /* ============================================================================ */
