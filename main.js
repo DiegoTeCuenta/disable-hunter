@@ -100,7 +100,7 @@ let G = {
 };
 
 const GROUND_Y = H*0.66;          // línea de piso donde pisan todo
-const MID_Y    = H*0.04;          // capa “middle” (cementerio borroso móvil)
+const MID_Y    = H*0.24;          // capa “middle” (cementerio borroso móvil)
 const FOG_Y    = H*0.75;          // niebla
 const LAYER_SCROLL = { mid: 0.35, fog: 0.55, ground: 1.0 };
 
