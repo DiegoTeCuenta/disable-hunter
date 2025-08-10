@@ -9,14 +9,14 @@ addEventListener("resize", fit); fit();
 /* ---------- CONFIG ÚNICA QUE TE INTERESA ---------- */
 const CFG = {
   // Velocidad base del scroll (px por segundo)
-scrollSpeed: 187,      // antes 220 (≈ -15%)
+scrollSpeed: 150,      // antes 220 (≈ -15%)
 scrollAccelEachSec: 0,
 
   // Movimiento del jugador
   playerSpeed: 300,          // velocidad lateral (px/s)
-  jump: -900,                // fuerza salto (px/s)
+  jump: -950,                // fuerza salto (px/s)
   gravity: 2200,             // gravedad (px/s^2)
-  coyote: 0.16,               // “coyote time” para saltar justo al borde
+  coyote: 0.18,               // “coyote time” para saltar justo al borde
 
   // Gaps de spawns en distancia recorrida (px de mundo)
   gaps: {
