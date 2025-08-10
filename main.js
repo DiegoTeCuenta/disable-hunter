@@ -1,5 +1,5 @@
 // =========================
-// Disabled Hunter — main.js
+// Disabled Hunter — main.js (slow & fair tune)
 // =========================
 
 const canvas = document.getElementById("game");
@@ -7,7 +7,31 @@ const ctx = canvas.getContext("2d");
 function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
 addEventListener("resize", resize); resize();
 
-// --------- helpers ----------
+/* ----------------- T U N I N G  ----------------- */
+const CFG = {
+  worldSpeed: 2.6,          // velocidad con la que “viene” el mundo
+  zombieExtra: [ -0.4, 0.8 ], // variación sobre worldSpeed
+  spawn: {
+    zombie: 1.25,           // cada n segundos
+    coin:   0.70,
+    special:3.60,
+    obst:   2.20,
+    obstChance: 0.40
+  },
+  player: {
+    speed: 6.0,             // velocidad al moverse con ← →
+    jump: -21.5,            // más negativo = más alto
+    gravity: 1.10,          // un poco más suave
+    coyoteTime: 0.10        // perdón al saltar tras dejar el suelo (seg)
+  },
+  hitbox: {
+    // hitbox amable para obstáculos (más bajitos)
+    obstW: 78, obstH: 66, drawW: 112, drawH: 112
+  },
+  power: { max: 100, beamCost: 20, beamSpeed: 900 }
+};
+/* ------------------------------------------------ */
+
 const rand = (a,b)=>Math.random()*(b-a)+a;
 const chance = p => Math.random()<p;
 function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
@@ -40,15 +64,17 @@ const sfxOver   = loadSnd("assets/sfx_gameover.wav");
 const state = {
   started:false, over:false,
   score:0, best:0, lives:3,
-  power:0, powerMax:100,       // energía para disparar
-  worldSpeed:5.5,              // velocidad base del mundo (zombies/monedas se mueven)
+  power:0, powerMax:CFG.power.max,
   parallax: {mid:0,fog:0,gnd:0},
 
   player:{
     x:160, y:0, w:64, h:64,
-    vx:0, vy:0, speed:6.5,
-    gravity:1.25, jump:-19,
-    onGround:true, invul:0, shotCd:0
+    vx:0, vy:0,
+    speed:CFG.player.speed,
+    gravity:CFG.player.gravity,
+    jump:CFG.player.jump,
+    onGround:true, invul:0, shotCd:0,
+    coyote:0
   },
 
   zombies:[], coins:[], puffs:[], obstacles:[], beams:[],
@@ -62,24 +88,20 @@ const groundY = ()=> canvas.height - GROUND_H;
 const keys = new Set();
 addEventListener("keydown", (e)=>{
   keys.add(e.code);
-
-  // Start / restart
   if (e.code==="Enter"){
     if (!state.started || state.over) startGame();
   }
-
-  // Disparo con espacio
   if (e.code==="Space" && state.started && !state.over){
     shoot();
   }
 });
 addEventListener("keyup", e=>keys.delete(e.code));
 
-// --------- inicio ----------
+// --------- inicio / over ----------
 function resetPlayer(){
   const p = state.player;
   p.y = groundY()-p.h;
-  p.vy = 0; p.vx = 0; p.onGround = true; p.invul = 0.9; p.shotCd = 0;
+  p.vy = 0; p.vx = 0; p.onGround = true; p.invul = 0.9; p.shotCd = 0; p.coyote=0;
 }
 function startGame(){
   state.started=true; state.over=false;
@@ -98,15 +120,16 @@ function gameOver(){
 
 // --------- spawn ----------
 function spawnZombie(){
+  const d = CFG.zombieExtra;
   state.zombies.push({
-    x: canvas.width + rand(0,300),
+    x: canvas.width + rand(0,320),
     y: groundY()-64, w:64, h:64,
-    speed: state.worldSpeed + rand(0,1.5)
+    speed: CFG.worldSpeed + rand(d[0], d[1])
   });
 }
 function spawnCoin(special=false){
   state.coins.push({
-    x: canvas.width + rand(0,280),
+    x: canvas.width + rand(0,300),
     y: groundY()-64 - rand(0,30),
     w:44, h:44, special
   });
@@ -115,11 +138,11 @@ function spawnPuff(x,y){ state.puffs.push({x,y,frame:0,frames:10}); }
 function spawnObstacle(){
   const useM = chance(0.5);
   const img = useM? imgMausoleum : imgTomb;
-  const W = 96, H = 96;   // hitbox amable
+  const hbW = CFG.hitbox.obstW, hbH = CFG.hitbox.obstH;
   state.obstacles.push({
-    x: canvas.width + rand(0,260),
-    y: groundY()-H, w:W, h:H,
-    drawW:128, drawH:128, img
+    x: canvas.width + rand(0,320),
+    y: groundY()-hbH, w:hbW, h:hbH,
+    drawW:CFG.hitbox.drawW, drawH:CFG.hitbox.drawH, img
   });
 }
 
@@ -127,14 +150,14 @@ function spawnObstacle(){
 function shoot(){
   const p = state.player;
   if (p.shotCd>0) return;
-  if (state.power<=0) return;
+  if (state.power<CFG.power.beamCost) return;
 
-  p.shotCd = 0.18;        // ligero cooldown
-  state.power = Math.max(0, state.power-20);
+  p.shotCd = 0.18;
+  state.power = Math.max(0, state.power-CFG.power.beamCost);
 
   state.beams.push({
     x: p.x + p.w - 6, y: p.y + p.h*0.35,
-    w: 42, h: 10, vx: 900   // súper rápido (px/s)
+    w: 42, h: 10, vx: CFG.power.beamSpeed
   });
 
   if (sfxBeam){ sfxBeam.currentTime=0; sfxBeam.play().catch(()=>{}); }
@@ -150,19 +173,23 @@ function overlaps(a,b){
 function update(dt){
   const p = state.player;
 
-  // controles (izq/der)
+  // controles
   let mv = 0;
   if (keys.has("ArrowLeft") || keys.has("KeyZ")) mv -= 1;
   if (keys.has("ArrowRight")|| keys.has("KeyC")) mv += 1;
   p.vx = mv * p.speed;
 
-  // salto con S o ↑ (no con espacio)
-  if ((keys.has("ArrowUp") || keys.has("KeyS")) && p.onGround){
-    p.vy = p.jump; p.onGround=false;
+  // coyote time
+  if (p.onGround) p.coyote = CFG.player.coyoteTime;
+  else if (p.coyote>0) p.coyote -= dt;
+
+  // salto con S o ↑ (usa coyote)
+  if ((keys.has("ArrowUp") || keys.has("KeyS")) && (p.onGround || p.coyote>0)){
+    p.vy = p.jump; p.onGround=false; p.coyote=0;
   }
 
   // física vertical
-  p.vy += p.gravity;
+  p.vy += CFG.player.gravity;
   p.y  += p.vy;
   if (p.y >= groundY()-p.h){ p.y=groundY()-p.h; p.vy=0; p.onGround=true; }
 
@@ -174,25 +201,25 @@ function update(dt){
   if (p.invul>0) p.invul -= dt;
   if (p.shotCd>0) p.shotCd -= dt;
 
-  // spawns
+  // spawns más espaciados
   state.tZombie += dt; state.tCoin += dt; state.tSpec += dt; state.tObs += dt;
-  if (state.tZombie > 0.9) { state.tZombie = 0; spawnZombie(); }
-  if (state.tCoin   > 0.5) { state.tCoin   = 0; spawnCoin(false); }
-  if (state.tSpec   > 2.4) { state.tSpec   = 0; spawnCoin(true); }
-  if (state.tObs    > 1.6) { state.tObs    = 0; if (chance(0.55)) spawnObstacle(); }
+  if (state.tZombie > CFG.spawn.zombie) { state.tZombie = 0; spawnZombie(); }
+  if (state.tCoin   > CFG.spawn.coin)   { state.tCoin   = 0; spawnCoin(false); }
+  if (state.tSpec   > CFG.spawn.special){ state.tSpec   = 0; spawnCoin(true); }
+  if (state.tObs    > CFG.spawn.obst)   { state.tObs    = 0; if (chance(CFG.spawn.obstChance)) spawnObstacle(); }
 
-  // parallax: responde a movimiento del jugador (no auto-run)
+  // parallax responde al movimiento del jugador
   state.parallax.mid -= p.vx * 0.12;
   state.parallax.fog -= p.vx * 0.22;
   state.parallax.gnd -= p.vx * 0.38;
 
-  // mundo avanza algo para que vengan enemigos
-  const worldShift = state.worldSpeed;
+  // mundo avanza suave hacia el jugador
+  const worldShift = CFG.worldSpeed;
 
   // zombies
   for (let i=state.zombies.length-1;i>=0;i--){
     const z = state.zombies[i];
-    z.x -= z.speed; // se mueven hacia el jugador
+    z.x -= z.speed;
     if (z.x + z.w < -50){ state.zombies.splice(i,1); continue; }
 
     // beam hit
@@ -208,7 +235,7 @@ function update(dt){
       }
     }
 
-    // golpe al jugador
+    // golpe al jugador (hitbox centrada)
     const hb = {x:z.x+10,y:z.y+10,w:z.w-20,h:z.h-20};
     if (!state.over && p.invul<=0 && overlaps({x:p.x,y:p.y,w:p.w,h:p.h}, hb)){
       state.lives--; p.invul=1;
@@ -221,7 +248,7 @@ function update(dt){
   // monedas
   for (let i=state.coins.length-1;i>=0;i--){
     const c = state.coins[i];
-    c.x -= worldShift; // llegan desde la derecha
+    c.x -= worldShift;
     if (c.x + c.w < -50){ state.coins.splice(i,1); continue; }
     if (overlaps({x:p.x,y:p.y,w:p.w,h:p.h}, c)){
       if (c.special){
@@ -236,7 +263,7 @@ function update(dt){
     }
   }
 
-  // obstáculos (choque quita vida)
+  // obstáculos (hitbox más baja y ancha amable)
   for (let i=state.obstacles.length-1;i>=0;i--){
     const o = state.obstacles[i];
     o.x -= worldShift;
@@ -249,7 +276,7 @@ function update(dt){
     }
   }
 
-  // beams (proyectiles)
+  // beams
   for (let i=state.beams.length-1;i>=0;i--){
     const b = state.beams[i];
     b.x += b.vx * dt;
@@ -266,10 +293,10 @@ function update(dt){
 // --------- draw helpers ----------
 function drawTiled(img, y, off, alpha=1){
   if (!img.complete) return;
-  const w = img.width, h = img.height;
+  const w = img.width;
   ctx.save(); ctx.globalAlpha = alpha;
   let x = (off % w); if (x>0) x -= w;
-  for(; x<canvas.width; x+=w){ ctx.drawImage(img, x, y, w, h); }
+  for(; x<canvas.width; x+=w){ ctx.drawImage(img, x, y); }
   ctx.restore();
 }
 
@@ -281,10 +308,8 @@ function render(){
   // fondo
   const midY = groundY()-220;
   drawTiled(imgMid, midY, state.parallax.mid, 0.55);
-
-  // niebla (DETRÁS de personajes)
+  // niebla detrás
   drawTiled(imgFog, groundY()-180, state.parallax.fog, 0.85);
-
   // suelo
   drawTiled(imgGnd, groundY()-imgGnd.height, state.parallax.gnd, 1);
 
@@ -314,7 +339,7 @@ function render(){
     ctx.globalAlpha = 1;
   }
 
-  // player (parpadeo suave si invul)
+  // player (parpadeo si invul)
   if (state.player.invul>0) ctx.globalAlpha = 0.6;
   ctx.drawImage(imgPlayer, state.player.x, state.player.y, state.player.w, state.player.h);
   ctx.globalAlpha = 1;
@@ -335,7 +360,7 @@ function render(){
     ctx.fill();
   }
 
-  // barra de poder (energía)
+  // barra de poder
   const barMax = 240, barX = 540, barY = 32;
   ctx.fillStyle="#333"; ctx.fillRect(barX, barY, barMax, 12);
   const pw = Math.round(barMax * (state.power/state.powerMax));
