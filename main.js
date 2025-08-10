@@ -51,7 +51,7 @@ addEventListener('resize', fitCanvas);
 /* Si “todo el juego” te queda muy arriba/abajo, ajusta SOLO este offset:   */
 let Y_OFFSET = 40;   // + baja todo / - lo sube (en px)
 
-const GROUND_Y = () => H*0.50 + Y_OFFSET;
+const GROUND_Y = () => H*0.66 + Y_OFFSET;
 const MID_Y    = () => H*0.12 + Y_OFFSET;
 const FOG_Y    = () => H*0.50 + Y_OFFSET;
 const LAYER_SCROLL = { mid:0.35, fog:0.55, ground:1.0 };
