@@ -1,326 +1,270 @@
 // =========================
-// Disabled Hunter — main.js (spawn por cámara + anticipo seguro)
+// Disabled Hunter — Runner autosroll estable
 // =========================
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
-addEventListener("resize", resize); resize();
+function fit(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+addEventListener("resize", fit); fit();
 
-/* ----------------- CONFIG ----------------- */
+/* ---------- CONFIG ÚNICA QUE TE INTERESA ---------- */
 const CFG = {
-  // Jugador
-  playerSpeed: 6.0,
-  jump:       -21.0,
-  gravity:     1.12,
-  coyote:      0.10,
+  // Velocidad base del scroll (px por segundo)
+  scrollSpeed: 220,          // <-- MÁS BAJO = MÁS LENTO (prueba 180–260)
+  scrollAccelEachSec: 0,     // aceleración opcional (0 = fijo)
 
-  // Parallax
-  px: { middle: 0.25, fog: 0.45, ground: 0.85 },
+  // Movimiento del jugador
+  playerSpeed: 300,          // velocidad lateral (px/s)
+  jump: -750,                // fuerza salto (px/s)
+  gravity: 2200,             // gravedad (px/s^2)
+  coyote: 0.1,               // “coyote time” para saltar justo al borde
 
-  // Distancias entre spawns (X del mundo)
-  span: {
-    coinMin: 280,  coinMax: 520,
-    specMin: 1800, specMax: 2600,
-    zomMin:  700,  zomMax:  1100,
-    obsMin:  900,  obsMax:  1500,
-    obsChance: 0.55
+  // Gaps de spawns en distancia recorrida (px de mundo)
+  gaps: {
+    coin:  [280, 520],
+    spec:  [1600, 2400],
+    zom:   [900, 1300],
+    obst:  [1100, 1700],
+    obstChance: 0.55
   },
 
-  // Generar SIEMPRE fuera de pantalla (a la derecha)
-  lead: {
-    coin:  180,  // px fuera de pantalla
-    spec:  220,
-    zomb:  240,
-    obst:  260
-  },
-
-  // Nunca spawnear más cerca que esto del jugador
-  minGapFromPlayer: 320,
-
-  // Obstáculos (hitbox vs. dibujo)
-  obst: { hitW: 78, hitH: 66, drawW: 112, drawH: 112 },
-
-  // Power/disparo
+  // HUD / juego
   powerMax: 100,
   beamCost: 20,
-  beamSpeed: 900
+  beamSpeed: 900,
+
+  // Obstáculos (hitbox vs dibujo)
+  obst: { hitW: 78, hitH: 66, drawW: 112, drawH: 112 }
 };
-/* ------------------------------------------ */
+/* -------------------------------------------------- */
 
-const rand = (a,b)=>Math.random()*(b-a)+a;
-const chance = p => Math.random()<p;
-const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const rand=(a,b)=>Math.random()*(b-a)+a;
+const ri   =(a,b)=>Math.floor(rand(a,b+1));
+const chance=p=>Math.random()<p;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
-/* ------------ Assets ------------ */
-function loadImg(src){ const i=new Image(); i.src=src; return i; }
-function loadSnd(src,loop=false){ try{const a=new Audio(src); a.loop=loop; return a;}catch{return null;} }
+/* ---------- Assets ---------- */
+function img(src){ const i=new Image(); i.src=src; return i; }
+function sfx(src,loop=false){ try{const a=new Audio(src); a.loop=loop; return a;}catch{return null;} }
 
-const imgMid  = loadImg("assets/tiles/tile_middleok.png");
-const imgFog  = loadImg("assets/tiles/tile_fog.png");
-const imgGnd  = loadImg("assets/tiles/tile_ground_soft.png");
+const imgMid  = img("assets/tiles/tile_middleok.png");
+const imgFog  = img("assets/tiles/tile_fog.png");
+const imgGnd  = img("assets/tiles/tile_ground_soft.png");
 
-const imgPlayer = loadImg("assets/player.png");
-const imgZombie = loadImg("assets/zombie.png");
-const imgCoin   = loadImg("assets/coin.png");
-const imgCoinS  = loadImg("assets/coin_special.png");
-const imgPuff   = loadImg("assets/fx/fx_zombie_puff_64.png");
+const imgPlayer = img("assets/player.png");
+const imgZombie = img("assets/zombie.png");
+const imgCoin   = img("assets/coin.png");
+const imgCoinS  = img("assets/coin_special.png");
+const imgPuff   = img("assets/fx/fx_zombie_puff_64.png");
+const imgTomb   = img("assets/tiles/tile_tomb_1x1.png");
+const imgMaus   = img("assets/tiles/tile_mausoleum_1x1.png");
 
-const imgTomb      = loadImg("assets/tiles/tile_tomb_1x1.png");
-const imgMausoleum = loadImg("assets/tiles/tile_mausoleum_1x1.png");
+const music = sfx("assets/music.mp3", true);
+const sndCoin = sfx("assets/sfx_coin.wav");
+const sndSpec = sfx("assets/sfx_power.wav");
+const sndBeam = sfx("assets/sfx_beam.wav");
+const sndDie  = sfx("assets/sfx_zombie_die.wav");
+const sndOver = sfx("assets/sfx_gameover.wav");
 
-const sndMusic = loadSnd("assets/music.mp3", true);
-const sfxCoin  = loadSnd("assets/sfx_coin.wav");
-const sfxPower = loadSnd("assets/sfx_power.wav");
-const sfxBeam  = loadSnd("assets/sfx_beam.wav");
-const sfxZDie  = loadSnd("assets/sfx_zombie_die.wav");
-const sfxOver  = loadSnd("assets/sfx_gameover.wav");
-
-/* --------------- Estado ---------------- */
-const GROUND_H = 120;
-const groundY = ()=> canvas.height - GROUND_H;
+/* ---------- Estado ---------- */
+const GROUND = 120;
+const gy = ()=> canvas.height - GROUND;
 
 const S = {
   started:false, over:false,
   score:0, best:0, lives:3, power:0,
 
-  // mundo/cámara
-  worldX:0,
-  parallax:{ mid:0, fog:0, gnd:0 },
+  // distancia del mundo (cuánto se ha desplazado el suelo hacia la izq.)
+  world: 0,
+  scroll: CFG.scrollSpeed,
 
-  // jugador
-  p:{ x:160, y:0, w:64, h:64, vx:0, vy:0, speed:CFG.playerSpeed,
-      jump:CFG.jump, gravity:CFG.gravity, onGround:true,
-      invul:0, coyote:0, shotCd:0 },
+  // jugador (en coordenadas de pantalla)
+  p:{ x: 180, y: 0, w:64, h:64, vx:0, vy:0, on:false, coyote:0, invul:0, shotCd:0 },
 
-  // entidades
-  zombies:[], coins:[], obstacles:[], beams:[], puffs:[],
+  coins:[], zombies:[], obstacles:[], beams:[], puffs:[],
 
-  // "próximas X" absolutas (en mundo) para spawns
-  nextCoinX:0, nextSpecX:0, nextZomX:0, nextObsX:0
+  // siguientes distancias absolutas donde aparecerá cada cosa
+  nextCoin:0, nextSpec:0, nextZom:0, nextObst:0
 };
 
-/* ----------- Input ----------- */
+/* ---------- Input ---------- */
 const keys=new Set();
 addEventListener("keydown",e=>{
   keys.add(e.code);
-  if (e.code==="Enter"){ if(!S.started || S.over) startGame(); }
+  if (e.code==="Enter"){ if(!S.started||S.over) start(); }
   if (e.code==="Space" && S.started && !S.over) shoot();
 });
 addEventListener("keyup",e=>keys.delete(e.code));
 
-/* ----------- Helpers ----------- */
+/* ---------- Helpers ---------- */
 function resetPlayer(){
   const p=S.p;
-  p.y=groundY()-p.h; p.vy=0; p.vx=0; p.onGround=true;
-  p.invul=0.9; p.coyote=0; p.shotCd=0;
+  p.y = gy()-p.h; p.vx=0; p.vy=0; p.on=true; p.coyote=0; p.invul=0.8; p.shotCd=0;
 }
-function cameraLeft(){ return S.worldX; }
-function cameraRight(){ return S.worldX + canvas.width; }
-function XtoScreen(wx){ return wx - S.worldX; }
-
-/* ------ Programación absoluta de spawns ------ */
-function scheduleNext(cameraR){
-  const sp=CFG.span;
-  // siguientes X (si no están programadas aún o ya quedaron atrás)
-  if (S.nextCoinX <= cameraR) S.nextCoinX = cameraR + rand(sp.coinMin, sp.coinMax);
-  if (S.nextSpecX <= cameraR) S.nextSpecX = cameraR + rand(sp.specMin, sp.specMax);
-  if (S.nextZomX  <= cameraR) S.nextZomX  = cameraR + rand(sp.zomMin,  sp.zomMax);
-  if (S.nextObsX  <= cameraR) S.nextObsX  = cameraR + rand(sp.obsMin,  sp.obsMax);
+function screenRect(ent){
+  // ent.x es distancia de mundo; su X en pantalla = pantallaWidth - (world - ent.x)
+  // más fácil: screenX = ent.x - S.world
+  return { x: ent.x - S.world, y: ent.y, w: ent.w, h: ent.h };
 }
-function spawnAheadIfDue(){
-  const camR = cameraRight();
-  scheduleNext(camR);
+function overlap(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
 
-  const px = S.p.x + S.worldX; // X mundial del jugador
-  const minGap = Math.max(px + CFG.minGapFromPlayer, camR); // nunca encima del player
+function scheduleInitial(){
+  const w = S.world;
+  const g=CFG.gaps;
+  S.nextCoin = w + rand(...g.coin);
+  S.nextSpec = w + rand(...g.spec);
+  S.nextZom  = w + rand(...g.zom);
+  S.nextObst = w + rand(...g.obst);
+}
+function spawnIfReached(){
+  const rightEdgeWorld = S.world + canvas.width + 600; // pre-cargar fuera de pantalla
+  const g=CFG.gaps;
 
-  // MONEDA NORMAL
-  while (camR >= S.nextCoinX){
-    const wx = Math.max(S.nextCoinX + CFG.lead.coin, minGap + CFG.lead.coin);
-    S.coins.push({ x:wx, y:groundY()-88-rand(0,24), w:56, h:56, special:false });
-    S.nextCoinX += rand(CFG.span.coinMin, CFG.span.coinMax);
+  // Coin
+  while (S.nextCoin < rightEdgeWorld){
+    S.coins.push({ x:S.nextCoin, y: gy()-88-rand(0,24), w:56, h:56, special:false });
+    S.nextCoin += rand(...g.coin);
   }
-  // MONEDA ESPECIAL
-  while (camR >= S.nextSpecX){
-    const wx = Math.max(S.nextSpecX + CFG.lead.spec, minGap + CFG.lead.spec);
-    S.coins.push({ x:wx, y:groundY()-92-rand(0,24), w:56, h:56, special:true });
-    S.nextSpecX += rand(CFG.span.specMin, CFG.span.specMax);
+  // Special coin
+  while (S.nextSpec < rightEdgeWorld){
+    S.coins.push({ x:S.nextSpec, y: gy()-92-rand(0,24), w:56, h:56, special:true });
+    S.nextSpec += rand(...g.spec);
   }
-  // ZOMBIE
-  while (camR >= S.nextZomX){
-    const wx = Math.max(S.nextZomX + CFG.lead.zomb, minGap + CFG.lead.zomb);
-    S.zombies.push({ x:wx, y:groundY()-64, w:64, h:64 });
-    S.nextZomX += rand(CFG.span.zomMin, CFG.span.zomMax);
+  // Zombie
+  while (S.nextZom < rightEdgeWorld){
+    S.zombies.push({ x:S.nextZom, y: gy()-64, w:64, h:64 });
+    S.nextZom += rand(...g.zom);
   }
-  // OBSTÁCULO
-  while (camR >= S.nextObsX){
-    if (chance(CFG.span.obsChance)){
+  // Obstacles
+  while (S.nextObst < rightEdgeWorld){
+    if (chance(g.obstChance)){
       const useM = chance(0.5);
-      const wx = Math.max(S.nextObsX + CFG.lead.obst, minGap + CFG.lead.obst);
       S.obstacles.push({
-        x:wx, y:groundY()-CFG.obst.hitH, w:CFG.obst.hitW, h:CFG.obst.hitH,
-        drawW:CFG.obst.drawW, drawH:CFG.obst.drawH, img: useM?imgMausoleum:imgTomb
+        x:S.nextObst,
+        y:gy()-CFG.obst.hitH, w:CFG.obst.hitW, h:CFG.obst.hitH,
+        drawW:CFG.obst.drawW, drawH:CFG.obst.drawH,
+        img: useM?imgMaus:imgTomb
       });
     }
-    S.nextObsX += rand(CFG.span.obsMin, CFG.span.obsMax);
+    S.nextObst += rand(...g.obst);
   }
 }
 
-/* ----------- Juego ----------- */
-function startGame(){
+function start(){
   S.started=true; S.over=false;
   S.score=0; S.lives=3; S.power=0;
+  S.world=0; S.scroll=CFG.scrollSpeed;
 
-  S.worldX=0;
-  S.parallax.mid = S.parallax.fog = S.parallax.gnd = 0;
-
-  S.zombies.length=0; S.coins.length=0; S.obstacles.length=0;
+  S.coins.length=0; S.zombies.length=0; S.obstacles.length=0;
   S.beams.length=0; S.puffs.length=0;
 
   resetPlayer();
+  scheduleInitial(); spawnIfReached();
 
-  // programa primeros spawns suficientemente lejos
-  const camR = cameraRight();
-  S.nextCoinX = camR + rand(360, 600);
-  S.nextSpecX = camR + rand(1400, 2200);
-  S.nextZomX  = camR + rand(800, 1200);
-  S.nextObsX  = camR + rand(900, 1400);
-
-  if (sndMusic){ sndMusic.volume=0.38; sndMusic.currentTime=0; sndMusic.play().catch(()=>{}); }
+  if (music){ music.currentTime=0; music.volume=.38; music.play().catch(()=>{}); }
 }
-
 function gameOver(){
-  S.over=true;
-  if (S.score>S.best) S.best=S.score;
-  if (sfxOver){ sfxOver.currentTime=0; sfxOver.play().catch(()=>{}); }
-  if (sndMusic){ sndMusic.pause(); }
+  S.over=true; if (S.score>S.best) S.best=S.score;
+  if (music) music.pause();
+  if (sndOver){ sndOver.currentTime=0; sndOver.play().catch(()=>{}); }
 }
 
-/* ----------- Disparo ----------- */
+/* ---------- Gameplay ---------- */
 function shoot(){
   const p=S.p;
-  if (p.shotCd>0) return;
-  if (S.power < CFG.beamCost) return;
+  if (p.shotCd>0 || S.power<CFG.beamCost) return;
   p.shotCd=0.18;
-  S.power=Math.max(0, S.power-CFG.beamCost);
-  S.beams.push({ x:S.worldX + p.x + p.w - 6, y:p.y + p.h*0.35, w:42, h:10, vx:CFG.beamSpeed });
-  if (sfxBeam){ sfxBeam.currentTime=0; sfxBeam.play().catch(()=>{}); }
+  S.power=Math.max(0,S.power-CFG.beamCost);
+  S.beams.push({ x:p.x+p.w-6, y:p.y+p.h*0.35, w:42, h:10, vx:CFG.beamSpeed });
+  if (sndBeam){ sndBeam.currentTime=0; sndBeam.play().catch(()=>{}); }
 }
 
-/* ----------- Colisión ----------- */
-function overlaps(a,b){
-  return a.x < b.x + b.w && a.x + a.w > b.x &&
-         a.y < b.y + b.h && a.y + a.h > b.y;
-}
-
-/* ----------- Update ----------- */
 function update(dt){
+  // Scroll del mundo
+  S.world += S.scroll*dt;
+  if (CFG.scrollAccelEachSec>0) S.scroll += CFG.scrollAccelEachSec*dt;
+
+  // Input jugador
   const p=S.p;
+  p.vx = 0;
+  if (keys.has("ArrowLeft") || keys.has("KeyZ")) p.vx -= CFG.playerSpeed;
+  if (keys.has("ArrowRight")|| keys.has("KeyC")) p.vx += CFG.playerSpeed;
 
-  // Input horizontal
-  let mv=0;
-  if (keys.has("ArrowLeft") || keys.has("KeyZ")) mv-=1;
-  if (keys.has("ArrowRight")|| keys.has("KeyC")) mv+=1;
-  p.vx = mv * p.speed;
+  // mover en pantalla
+  p.x += p.vx*dt;
+  p.x = clamp(p.x, 120, canvas.width*0.65);
 
-  // Coyote
-  if (p.onGround) p.coyote = CFG.coyote;
-  else if (p.coyote>0) p.coyote -= dt;
-
-  // Salto
-  if ((keys.has("ArrowUp")||keys.has("KeyS")) && (p.onGround || p.coyote>0)){
-    p.vy = CFG.jump; p.onGround=false; p.coyote=0;
-  }
-
-  // Física vertical
-  p.vy += CFG.gravity;
-  p.y  += p.vy;
-  if (p.y >= groundY()-p.h){ p.y = groundY()-p.h; p.vy=0; p.onGround=true; }
-
-  // Límites X (jugador)
-  p.x += p.vx;
-  p.x = clamp(p.x, 120, canvas.width - (120 + p.w));
-
-  // Avanza mundo
-  S.worldX += p.vx;
-
-  // Parallax
-  S.parallax.mid = S.worldX * CFG.px.middle;
-  S.parallax.fog = S.worldX * CFG.px.fog;
-  S.parallax.gnd = S.worldX * CFG.px.ground;
+  // salto + coyote
+  if (p.on) p.coyote = CFG.coyote; else p.coyote = Math.max(0, p.coyote-dt);
+  if ((keys.has("ArrowUp")||keys.has("KeyS")) && (p.on || p.coyote>0)){ p.vy = CFG.jump; p.on=false; p.coyote=0; }
+  p.vy += CFG.gravity*dt; p.y += p.vy*dt;
+  if (p.y >= gy()-p.h){ p.y=gy()-p.h; p.vy=0; p.on=true; }
 
   if (p.invul>0)  p.invul -= dt;
   if (p.shotCd>0) p.shotCd -= dt;
 
-  // Spawns por cámara (nacen siempre fuera de pantalla)
-  spawnAheadIfDue();
+  // Spawns por distancia
+  spawnIfReached();
 
-  const camL = cameraLeft()-80;
-  const camR = cameraRight()+80;
+  const cullLeftWorld = S.world - 120;
 
   // Monedas
   for (let i=S.coins.length-1;i>=0;i--){
     const c=S.coins[i];
-    if (c.x < camL){ S.coins.splice(i,1); continue; }
-    const pr = { x:S.worldX + p.x, y:p.y, w:p.w, h:p.h };
-    if (overlaps(pr, c)){
-      if (c.special){
-        S.power = clamp(S.power + 40, 0, CFG.powerMax);
-        S.score += 120;
-        if (sfxPower){ sfxPower.currentTime=0; sfxPower.play().catch(()=>{}); }
-      } else {
-        S.score += 25;
-        if (sfxCoin){ sfxCoin.currentTime=0; sfxCoin.play().catch(()=>{}); }
-      }
+    if (c.x < cullLeftWorld){ S.coins.splice(i,1); continue; }
+    const sr = screenRect(c);
+    const pr = { x:p.x, y:p.y, w:p.w, h:p.h };
+    if (overlap(sr,pr)){
+      if (c.special){ S.power = clamp(S.power+40, 0, CFG.powerMax); S.score += 120; if (sndSpec){ sndSpec.currentTime=0; sndSpec.play().catch(()=>{});} }
+      else          { S.score += 25; if (sndCoin){ sndCoin.currentTime=0; sndCoin.play().catch(()=>{});} }
       S.coins.splice(i,1);
     }
   }
 
-  // Zombies
+  // Beams
+  for (let i=S.beams.length-1;i>=0;i--){
+    const b=S.beams[i]; b.x += b.vx*dt; if (b.x>canvas.width+80) S.beams.splice(i,1);
+  }
+
+  // Zombies (puedes darles un ligero avance propio si quieres)
   for (let i=S.zombies.length-1;i>=0;i--){
     const z=S.zombies[i];
-    if (z.x < camL){ S.zombies.splice(i,1); continue; }
+    if (z.x < cullLeftWorld){ S.zombies.splice(i,1); continue; }
 
-    // hit por beam
+    // golpe de beam
+    const zr = screenRect(z);
     for (let j=S.beams.length-1;j>=0;j--){
       const b=S.beams[j];
-      if (overlaps(b,z)){
-        S.score += 150;
-        S.puffs.push({ x:z.x, y:z.y, frame:0, frames:10 });
-        if (sfxZDie){ sfxZDie.currentTime=0; sfxZDie.play().catch(()=>{}); }
-        S.zombies.splice(i,1); S.beams.splice(j,1);
+      if (overlap({x:b.x,y:b.y,w:b.w,h:b.h}, zr)){
+        S.puffs.push({x:z.x,y:z.y,frame:0,frames:10});
+        if (sndDie){ sndDie.currentTime=0; sndDie.play().catch(()=>{}); }
+        S.zombies.splice(i,1); S.beams.splice(j,1); S.score += 150;
         break;
       }
     }
-    // golpea al jugador
-    const hb={ x:z.x+10, y:z.y+10, w:z.w-20, h:z.h-20 };
-    const pr={ x:S.worldX+p.x, y:p.y, w:p.w, h:p.h };
-    if (p.invul<=0 && overlaps(pr,hb)){
-      S.lives--; p.invul=1.0;
-      S.puffs.push({ x:z.x, y:z.y, frame:0, frames:10 });
-      S.zombies.splice(i,1);
-      if (S.lives<=0){ gameOver(); return; }
+    // colisión con jugador
+    if (i<S.zombies.length){
+      const pr = { x:p.x, y:p.y, w:p.w, h:p.h };
+      if (p.invul<=0 && overlap(zr,pr)){
+        S.lives--; p.invul=1.0;
+        S.puffs.push({x:z.x,y:z.y,frame:0,frames:10});
+        S.zombies.splice(i,1);
+        if (S.lives<=0){ gameOver(); return; }
+      }
     }
   }
 
   // Obstáculos
   for (let i=S.obstacles.length-1;i>=0;i--){
     const o=S.obstacles[i];
-    if (o.x < camL){ S.obstacles.splice(i,1); continue; }
-    const pr={ x:S.worldX+p.x, y:p.y, w:p.w, h:p.h };
-    if (p.invul<=0 && overlaps(pr,o)){
+    if (o.x < cullLeftWorld){ S.obstacles.splice(i,1); continue; }
+    const or = screenRect(o);
+    const pr = { x:p.x, y:p.y, w:p.w, h:p.h };
+    if (p.invul<=0 && overlap(or,pr)){
       S.lives--; p.invul=1.0;
-      S.puffs.push({ x:o.x, y:o.y, frame:0, frames:10 });
+      S.puffs.push({x:o.x,y:o.y,frame:0,frames:10});
       S.obstacles.splice(i,1);
       if (S.lives<=0){ gameOver(); return; }
     }
-  }
-
-  // Beams
-  for (let i=S.beams.length-1;i>=0;i--){
-    const b=S.beams[i];
-    b.x += CFG.beamSpeed * dt;
-    if (b.x > camR+60) S.beams.splice(i,1);
   }
 
   // FX
@@ -328,47 +272,53 @@ function update(dt){
     const f=S.puffs[i]; f.frame++; if (f.frame>f.frames) S.puffs.splice(i,1);
   }
 
-  // Score por avance
-  S.score += Math.abs(p.vx) * 0.4;
+  // Score por distancia
+  S.score += CFG.scrollSpeed * dt * 0.3;
 }
 
-/* ----------- Render ----------- */
-function drawTiled(img,y,offset,alpha=1){
+/* ---------- Render ---------- */
+function tileX(img, offset){
   if (!img.complete) return;
-  const w=img.width; let x=(-offset)%w; if (x>0) x-=w;
-  ctx.save(); ctx.globalAlpha=alpha;
-  for (; x<canvas.width; x+=w) ctx.drawImage(img,x,y);
-  ctx.restore();
+  const w=img.width;
+  let x = -((S.world + offset) % w); if (x>0) x -= w;
+  for (; x<canvas.width; x+=w) ctx.drawImage(img, x, 0 + (img===imgGnd ? gy()-img.height : img===imgFog ? gy()-180 : gy()-220));
 }
 function render(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.fillStyle="#0a0d12"; ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  const midY = groundY()-220;
-  drawTiled(imgMid, midY, S.parallax.mid, .55);
-  drawTiled(imgFog, groundY()-180, S.parallax.fog, .85);
-  drawTiled(imgGnd, groundY()-imgGnd.height, S.parallax.gnd, 1);
+  // Parallax simple: usar offsets distintos
+  tileX(imgMid, 0.25*S.world);
+  tileX(imgFog, 0.45*S.world);
+  tileX(imgGnd, 0.85*S.world);
 
-  for (const c of S.coins) ctx.drawImage(c.special?imgCoinS:imgCoin, XtoScreen(c.x), c.y, c.w, c.h);
-  for (const o of S.obstacles){
-    const dx = XtoScreen(o.x) - (o.drawW-o.w)/2;
-    const dy = o.y - (o.drawH-o.h);
-    ctx.drawImage(o.img, dx, dy, o.drawW, o.drawH);
+  // Entidades
+  for (const c of S.coins){
+    const sr = screenRect(c);
+    ctx.drawImage(c.special?imgCoinS:imgCoin, sr.x, sr.y, c.w, c.h);
   }
-  for (const z of S.zombies) ctx.drawImage(imgZombie, XtoScreen(z.x), z.y, z.w, z.h);
-
+  for (const o of S.obstacles){
+    const or = screenRect(o);
+    ctx.drawImage(o.img, or.x-(o.drawW-o.w)/2, or.y-(o.drawH-o.h), o.drawW, o.drawH);
+  }
+  for (const z of S.zombies){
+    const zr = screenRect(z);
+    ctx.drawImage(imgZombie, zr.x, zr.y, z.w, z.h);
+  }
   ctx.fillStyle="#7ec8ff";
-  for (const b of S.beams) ctx.fillRect(XtoScreen(b.x), b.y, b.w, b.h);
+  for (const b of S.beams) ctx.fillRect(b.x, b.y, b.w, b.h);
 
   for (const f of S.puffs){
-    ctx.globalAlpha=1 - f.frame/f.frames;
-    ctx.drawImage(imgPuff, XtoScreen(f.x), f.y, 64, 64);
-    ctx.globalAlpha=1;
+    const sr = screenRect({x:f.x,y:f.y,w:64,h:64});
+    ctx.globalAlpha = 1 - f.frame/f.frames;
+    ctx.drawImage(imgPuff, sr.x, sr.y, 64, 64);
+    ctx.globalAlpha = 1;
   }
 
-  if (S.p.invul>0) ctx.globalAlpha=.6;
+  // Jugador
+  if (S.p.invul>0) ctx.globalAlpha = .6;
   ctx.drawImage(imgPlayer, S.p.x, S.p.y, S.p.w, S.p.h);
-  ctx.globalAlpha=1;
+  ctx.globalAlpha = 1;
 
   // HUD
   ctx.fillStyle="rgba(0,0,0,.55)"; ctx.fillRect(16,16,460,96);
@@ -379,7 +329,7 @@ function render(){
 
   for (let i=0;i<3;i++){
     ctx.beginPath(); ctx.arc(500+i*26,40,9,0,Math.PI*2);
-    ctx.fillStyle = i<S.lives? "#ff5566" : "#666"; ctx.fill();
+    ctx.fillStyle=i<S.lives? "#ff5566" : "#666"; ctx.fill();
   }
   const barMax=240, bx=580, by=32;
   ctx.fillStyle="#333";   ctx.fillRect(bx,by,barMax,12);
@@ -396,7 +346,7 @@ function render(){
   }
 }
 
-/* ----------- Loop ----------- */
+/* ---------- Loop ---------- */
 let last=performance.now();
 function loop(now){
   const dt=Math.min(0.032,(now-last)/1000); last=now;
