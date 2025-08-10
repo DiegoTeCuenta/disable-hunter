@@ -49,7 +49,7 @@ addEventListener('resize', fitCanvas);
 
 /* -------------------- Parallax anchors + offset vertical -------------------- */
 /* Si “todo el juego” te queda muy arriba/abajo, ajusta SOLO este offset:   */
-let Y_OFFSET = 40;   // + baja todo / - lo sube (en px)
+let Y_OFFSET = 50;   // + baja todo / - lo sube (en px)
 
 const GROUND_Y = () => H*0.66 + Y_OFFSET;
 const MID_Y    = () => H*0.12 + Y_OFFSET;
