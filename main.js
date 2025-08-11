@@ -62,7 +62,7 @@ const FOG_Y    = () => H*0.52 + Y_OFFSET;
 const LAYER_SCROLL = { mid:0.35, fog:0.55, ground:1.0 };
 // --- Base de apoyo sobre el piso (para evitar el “hueco” visual)
 const GROUND_PAD = 14;               // ajusta 10–18 según veas el contacto
-const BASE_Y     = () => GROUND_Y() + GROUND_PAD; // “suelo real” para entidades
+const BASE_Y     = () => BASE_Y() + GROUND_PAD; // “suelo real” para entidades
 
 /* --------------------- Assets con tolerancia a fallos ----------------------- */
 const IMG = {};
