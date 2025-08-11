@@ -373,7 +373,7 @@ function drawGame(){
   drawBGStatic();
   drawTiled(IMG.mid,    MID_Y(),    LAYER_SCROLL.mid,    IMG.mid.width||960);
   drawTiled(IMG.fog,    FOG_Y(),    LAYER_SCROLL.fog,    IMG.fog.width||960);
-  drawTiled(IMG.ground, BASE_Y(), LAYER_SCROLL.ground, IMG.ground.width||960);
+  drawTiled(IMG.ground, GROUND_Y(), LAYER_SCROLL.ground, IMG.ground.width||960);
 
   for(const c of coins){ const x=c.x-worldX; CTX.drawImage((c.sp?IMG.coinS:IMG.coin), x-16, c.y-16, 32,32); }
   for(const o of obst){ const x=o.x-worldX; const im=o.kind==='tomb'?IMG.tomb:IMG.maus; CTX.drawImage(im, x, o.y, CFG.obst.drawW, CFG.obst.drawH); }
