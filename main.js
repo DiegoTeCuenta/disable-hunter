@@ -1,12 +1,20 @@
-/* ===================== Disabled Hunter — main.js (RZ7 + BASE_Y) ============= */
-/* ----------------------- CONFIG (tus valores) -------------------------------- */
+/* ===================== Disabled Hunter — main.js (SCALE + MUSIC) ============ */
+/* ----------------------- AJUSTES PRINCIPALES -------------------------------- */
+
+// Escala global de entidades (player, zombies, monedas, tumbas, rayo)
+const SCALE_FACTOR = 1.00;   // 1.0 = igual | 1.2 = 20% más grandes | 0.9 = 10% más chicos
+
+// Offset vertical global de TODO el juego (capas + entidades)
+let Y_OFFSET = 40;           // + baja todo / – lo sube (en píxeles)
+
+/* ----------------------- CONFIG DE JUEGO (tu setup) ------------------------- */
 const CFG = {
   scrollSpeed: 150,
   scrollAccelEachSec: 0,
 
   playerSpeed: 300,
-  jump: -950,
-  gravity: 2200,
+  jump: -950,               // (si subes mucho la escala y lo notas corto, prueba -1000 o -1050)
+  gravity: 2200,            // (con escalas >1.2 puedes subirlo un poco: 2400)
   coyote: 0.18,
 
   gaps: {
@@ -21,8 +29,6 @@ const CFG = {
   beamCost: 20,
   beamSpeed: 900,
 
-  obst: { hitW: 65, hitH: 50, drawW: 112, drawH: 112 },
-
   hud: {
     scoreFont: 'bold 42px Inter, system-ui, sans-serif',
     bestFont:  'bold 32px Inter, system-ui, sans-serif',
@@ -31,14 +37,13 @@ const CFG = {
     powerX:  560,
     powerY:  42,
     powerW:  520,
-    powerH:   10
+    powerH:  10
   },
 
-  // volumen de la música (0–1)
   musicVol: 0.35,
 };
 
-/* --------------------- CORE: canvas & dimensiones --------------------------- */
+/* ------------------------- CANVAS & DIMENSIONES ----------------------------- */
 const CANVAS = document.getElementById('game');
 const CTX = CANVAS.getContext('2d');
 let W=0, H=0;
@@ -50,21 +55,42 @@ function fitCanvas(){
 fitCanvas();
 addEventListener('resize', fitCanvas);
 
-/* ---------------- Parallax anchors + offsets de altura ---------------------- */
-/* Si “todo el juego” te queda muy arriba/abajo, ajusta SOLO este offset:   */
-let Y_OFFSET = 50;                    // + baja todo / - lo sube (px)
-
-/* Offset SOLO de render del jugador (no afecta física ni colisión) */
-const PLAYER_Y_OFFSET = 0;            // + más abajo / – más arriba (px)
-
-const GROUND_Y = () => H*0.66 + Y_OFFSET;   // dónde se dibuja el tile del piso
-const MID_Y    = () => H*0.08 + Y_OFFSET;   // parallax middle
-const FOG_Y    = () => H*0.55 + Y_OFFSET;   // parallax fog
+/* ----------------------- PARALLAX + ANCLAS VERTICALES ---------------------- */
+const GROUND_Y = () => H*0.66 + Y_OFFSET;
+const MID_Y    = () => H*0.08 + Y_OFFSET;
+const FOG_Y    = () => H*0.52 + Y_OFFSET;
 const LAYER_SCROLL = { mid:0.35, fog:0.55, ground:1.0 };
 
-/* Base de apoyo real sobre el piso para entidades (evita “hueco” visual) */
-const GROUND_PAD = 40;                      // 10–18 según veas contacto
-const BASE_Y     = () => GROUND_Y() + GROUND_PAD;  // “suelo real” para físicas
+/* --------------------------- MEDIDAS BASE (no tocar) ------------------------ */
+const BASE = {
+  player: { w:48, h:64, drawW:56, drawH:72, drawOffX:-16, drawOffY:-10 },
+  zombie: { w:44, h:58, padDrawW:12, padDrawH:12 },
+  coin:   { size:32 },
+  obst:   { hitW:65, hitH:50, drawW:112, drawH:112, footPad:6 }, // footPad apoya sobre suelo
+  beam:   { len:220, segW:32, h:10, thick:6 },
+};
+
+/* ---------- Dimensiones ESCALADAS (todo lo jugable usa estas) --------------- */
+const S = v => Math.round(v * SCALE_FACTOR);
+
+const DIM = {
+  player: {
+    w:S(BASE.player.w), h:S(BASE.player.h),
+    drawW:S(BASE.player.drawW), drawH:S(BASE.player.drawH),
+    drawOffX:S(BASE.player.drawOffX), drawOffY:S(BASE.player.drawOffY),
+  },
+  zombie: {
+    w:S(BASE.zombie.w), h:S(BASE.zombie.h),
+    padDrawW:S(BASE.zombie.padDrawW), padDrawH:S(BASE.zombie.padDrawH),
+  },
+  coin: { size:S(BASE.coin.size) },
+  obst: {
+    hitW:S(BASE.obst.hitW), hitH:S(BASE.obst.hitH),
+    drawW:S(BASE.obst.drawW), drawH:S(BASE.obst.drawH),
+    footPad:S(BASE.obst.footPad),
+  },
+  beam: { len:S(BASE.beam.len), segW:S(BASE.beam.segW), h:S(BASE.beam.h), thick:S(BASE.beam.thick) },
+};
 
 /* --------------------- Assets con tolerancia a fallos ----------------------- */
 const IMG = {};
@@ -100,19 +126,16 @@ function loadAudio(key, src, volume=1){
     SFX[key]=a;
   }catch{}
 }
-// helpers SFX seguros
-const sfxReset = name => { const a=SFX[name]; if(a) a.currentTime=0; };
-const sfxPlay  = name => { const a=SFX[name]; a?.play?.(); };
+function sfxReset(name){ const a=SFX[name]; if(a){ a.currentTime=0; } }
+function sfxPlay(name){ const a=SFX[name]; if(a && a.play){ a.play(); } }
 
-/* ---- música (helpers) ------------------------------------------------------ */
+/* Música */
 function musicPlay(){
-  const m=SFX.music;
-  if(!m) return;
-  m.loop = true;
-  m.volume = CFG.musicVol ?? 0.35;
+  const m=SFX.music; if(!m) return;
+  m.loop = true; m.volume = CFG.musicVol ?? 0.35;
   m.play?.().catch(()=>{});
 }
-function musicPause(){ SFX.music?.pause?.(); }
+function musicPause(){ const m=SFX.music; if(m) m.pause?.(); }
 
 async function loadAll(){
   await Promise.all([
@@ -121,29 +144,21 @@ async function loadAll(){
     loadImage('fog',   'assets/tiles/tile_fog.png',            {w:960,h:200}),
     loadImage('ground','assets/tiles/tile_ground_soft.png',    {w:960,h:120}),
 
-    // entidades
     loadImage('player','assets/player.png',  {w:56,h:72}),
     loadImage('zombie','assets/zombie.png',  {w:50,h:62}),
     loadImage('coin',  'assets/coin.png',    {w:32,h:32}),
     loadImage('coinS', 'assets/coin_special.png', {w:32,h:32}),
-
     loadImage('tomb',  'assets/tiles/tile_tomb_1x1.png',      {w:112,h:112}),
     loadImage('maus',  'assets/tiles/tile_mausoleum_1x1.png', {w:112,h:112}),
-
     loadImage('fx_beam','assets/fx/fx_beam_128.png', {w:128,h:16}),
-
-    // corazón del HUD (si falta, se dibuja fallback)
-    loadImage('heart','assets/ui/ui_heart_32.png',{w:32,h:32})
+    loadImage('heart','assets/ui/ui_heart_32.png',{w:32,h:32}),
   ]);
 
-  // SFX
   loadAudio('coin',  'assets/sfx_coin.wav',  0.35);
   loadAudio('power', 'assets/sfx_power.wav', 0.45);
   loadAudio('beam',  'assets/sfx_beam.wav',  0.45);
   loadAudio('zdie',  'assets/sfx_zombie_die.wav',0.45);
   loadAudio('over',  'assets/sfx_gameover.wav',0.55);
-
-  // Música
   loadAudio('music','assets/music.mp3', CFG.musicVol ?? 0.35);
 }
 
@@ -152,7 +167,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const rand=(a,b)=>Math.random()*(b-a)+a;
 
 function drawBGStatic(){
-  const im = IMG.bg;
+  const im = IMG.bg; if(!im) return;
   const r = Math.max(W/im.width, H/im.height);
   const dw = im.width*r, dh = im.height*r;
   CTX.drawImage(im, (W-dw)/2, (H-dh)/2, dw, dh);
@@ -169,7 +184,7 @@ function drawTiled(img, y, speed, tileW=img.width||960){
 let running=false, worldX=0, scrollSpeed=CFG.scrollSpeed;
 let score=0, bestScore = Number(localStorage.getItem('dh_best')||0);
 
-const player = { x:180, y:0, vy:0, onGround:true, coyote:0, w:48, h:64, lives:3, power:0 };
+const player = { x:180, y:0, vy:0, onGround:true, coyote:0, w:DIM.player.w, h:DIM.player.h, lives:3, power:0 };
 const coins=[], zombies=[], obst=[], beams=[];
 let nextCoinAt=0, nextSpecAt=0, nextZAt=0, nextObAt=0;
 
@@ -182,9 +197,9 @@ function reset(){
   worldX=0; scrollSpeed=CFG.scrollSpeed; score=0;
   coins.length=0; zombies.length=0; obst.length=0; beams.length=0;
 
-  // apoyar al jugador en BASE_Y()
-  player.y = BASE_Y() - player.h;
-  player.vy=0; player.onGround=true; player.coyote=0;
+  // posiciona al jugador con sus dimensiones ESCALADAS
+  player.w = DIM.player.w; player.h = DIM.player.h;
+  player.y = GROUND_Y()-player.h; player.vy=0; player.onGround=true; player.coyote=0;
   player.lives=3; player.power=0;
 
   nextCoinAt = rand(...CFG.gaps.coin);
@@ -203,10 +218,10 @@ function update(dt){
   if (keys['arrowleft'])  player.x -= CFG.playerSpeed*dt;
   player.x = clamp(player.x, 80, W*0.6);
 
-  // física: suelo real en BASE_Y()
+  // física
   player.vy += CFG.gravity*dt;
   player.y  += player.vy*dt;
-  const gy = BASE_Y() - player.h;
+  const gy = GROUND_Y()-player.h;
   if (player.y >= gy){ player.y=gy; player.vy=0; player.onGround=true; player.coyote=CFG.coyote; }
   else { player.onGround=false; player.coyote-=dt; }
 
@@ -229,29 +244,37 @@ function update(dt){
     localStorage.setItem('dh_best', Math.max(bestScore, score));
     bestScore = Number(localStorage.getItem('dh_best')||0);
     running=false;
-    musicPause(); // detener música en game over
+    musicPause();
     showOverlay('Disabled Hunter', `Score: ${score}\nBest: ${bestScore}${MISSING.length?`\n\nMissing:\n${MISSING.join('\n')}`:''}`);
   }
 }
 function spawnWhile(){
+  // monedas normales
   while(worldX>=nextCoinAt){
-    const y = BASE_Y() - 28 - rand(0,110);
+    const y = GROUND_Y() - DIM.coin.size*0.9 - rand(0,110); // altura relativa escalada
     coins.push({x:worldX+W+rand(80,220), y, sp:false});
     nextCoinAt += rand(...CFG.gaps.coin);
   }
+  // monedas especiales
   while(worldX>=nextSpecAt){
-    const y = BASE_Y() - 28 - rand(40,140);
+    const y = GROUND_Y() - DIM.coin.size*0.9 - rand(40,140);
     coins.push({x:worldX+W+rand(140,260), y, sp:true});
     nextSpecAt += rand(...CFG.gaps.spec);
   }
+  // zombies
   while(worldX>=nextZAt){
-    zombies.push({x:worldX+W+rand(240,380), y:BASE_Y()-58, w:44, h:58, alive:true});
+    zombies.push({x:worldX+W+rand(240,380), y:GROUND_Y()-DIM.zombie.h, w:DIM.zombie.w, h:DIM.zombie.h, alive:true});
     nextZAt += rand(...CFG.gaps.zom);
   }
+  // obstáculos
   while(worldX>=nextObAt){
     if (Math.random()<CFG.gaps.obstChance){
       const kind=Math.random()<0.5?'tomb':'maus';
-      obst.push({x:worldX+W+rand(260,420), y:BASE_Y()-CFG.obst.drawH+6, w:CFG.obst.hitW, h:CFG.obst.hitH, kind});
+      obst.push({
+        x:worldX+W+rand(260,420),
+        y:GROUND_Y()-DIM.obst.drawH + DIM.obst.footPad, // apoya “pies” en el suelo
+        w:DIM.obst.hitW, h:DIM.obst.hitH, kind
+      });
     }
     nextObAt += rand(...CFG.gaps.obst);
   }
@@ -263,7 +286,7 @@ function updateEntities(dt){
   for(let i=coins.length-1;i>=0;i--){
     const c=coins[i];
     const cx=c.x-worldX;
-    if (AABB(player.x,player.y,36,48, cx-16,c.y-16,32,32)){
+    if (AABB(player.x,player.y,player.w,player.h, cx-DIM.coin.size/2, c.y-DIM.coin.size/2, DIM.coin.size, DIM.coin.size)){
       if (c.sp){
         player.power = clamp(player.power+35,0,CFG.powerMax);
         sfxReset('power'); sfxPlay('power');
@@ -280,18 +303,18 @@ function updateEntities(dt){
   for(let i=zombies.length-1;i>=0;i--){
     const z=zombies[i]; if(!z.alive){ zombies.splice(i,1); continue; }
     const zx=z.x-worldX;
-    if (AABB(player.x,player.y,36,48, zx,z.y,z.w,z.h)){
+    if (AABB(player.x,player.y,player.w,player.h, zx, z.y, z.w, z.h)){
       z.alive=false; player.lives--; zombies.splice(i,1);
       continue;
     }
     if (z.x<left) zombies.splice(i,1);
   }
 
-  // obst
+  // obstáculos
   for(let i=obst.length-1;i>=0;i--){
     const o=obst[i];
     const ox=o.x-worldX;
-    if (AABB(player.x,player.y,36,48, ox+16, o.y+CFG.obst.drawH-CFG.obst.hitH, o.w, o.h)){
+    if (AABB(player.x,player.y,player.w,player.h, ox+16, o.y+DIM.obst.drawH-DIM.obst.hitH, o.w, o.h)){
       player.lives--; obst.splice(i,1); continue;
     }
     if (o.x<left) obst.splice(i,1);
@@ -303,8 +326,9 @@ function AABB(ax,ay,aw,ah, bx,by,bw,bh){
 
 /* --------------------------- Beam (bloqueado por tumbas) -------------------- */
 function shootBeam(){
-  const x=player.x+34, y=player.y+30;
-  beams.push({x,y,dx:1,dy:0,len:220});
+  const x=player.x + Math.round(0.7*DIM.player.w);
+  const y=player.y + Math.round(0.45*DIM.player.h);
+  beams.push({x,y,dx:1,dy:0,len:DIM.beam.len});
   sfxReset('beam'); sfxPlay('beam');
 }
 function updateBeams(dt){
@@ -313,11 +337,11 @@ function updateBeams(dt){
     b.x += CFG.beamSpeed*dt*b.dx;
     b.y += CFG.beamSpeed*dt*b.dy;
 
-    // bloquea obstáculo
+    // bloquea obstáculo (usa hitbox escalada)
     let blocked=false;
     for(const o of obst){
-      const ox=o.x-worldX+18, oy=o.y+CFG.obst.drawH-CFG.obst.hitH;
-      if (AABB(b.x,b.y-4,b.len,8, ox,oy, CFG.obst.hitW,CFG.obst.hitH)){ blocked=true; break; }
+      const ox=o.x-worldX+18, oy=o.y+DIM.obst.drawH-DIM.obst.hitH;
+      if (AABB(b.x,b.y-DIM.beam.thick/2,b.len,DIM.beam.thick, ox,oy, DIM.obst.hitW,DIM.obst.hitH)){ blocked=true; break; }
     }
     if (blocked){ beams.splice(i,1); continue; }
 
@@ -325,7 +349,7 @@ function updateBeams(dt){
     for(let j=zombies.length-1;j>=0;j--){
       const z=zombies[j]; if(!z.alive) continue;
       const zx=z.x-worldX;
-      if (AABB(b.x,b.y-4,b.len,8, zx,z.y,z.w,z.h)){
+      if (AABB(b.x,b.y-DIM.beam.thick/2,b.len,DIM.beam.thick, zx,z.y,z.w,z.h)){
         z.alive=false; zombies.splice(j,1); score+=25;
         sfxReset('zdie'); sfxPlay('zdie');
       }
@@ -338,17 +362,17 @@ function updateBeams(dt){
 function drawBeams(){
   CTX.save(); CTX.globalAlpha=0.95;
   for(const b of beams){
-    const seg=IMG.fx_beam, h=10, segW=32;
+    const seg=IMG.fx_beam;
     if (seg && seg.width){
       let drawn=0;
       while(drawn<b.len){
-        const w=Math.min(segW, b.len-drawn);
-        CTX.drawImage(seg, 0,0, segW, seg.height, b.x+drawn, b.y-h/2, w, h);
+        const w=Math.min(DIM.beam.segW, b.len-drawn);
+        CTX.drawImage(seg, 0,0, DIM.beam.segW, seg.height, b.x+drawn, b.y-DIM.beam.h/2, w, DIM.beam.h);
         drawn+=w;
       }
     } else {
       CTX.fillStyle='rgba(120,190,255,.9)';
-      CTX.fillRect(b.x, b.y-3, b.len, 6);
+      CTX.fillRect(b.x, b.y-DIM.beam.thick/2, b.len, DIM.beam.thick);
     }
   }
   CTX.restore();
@@ -358,13 +382,8 @@ function drawHearts(){
   const hasHeart = IMG.heart && IMG.heart.width;
   for(let i=0;i<3;i++){
     CTX.globalAlpha=i<player.lives?1:0.25;
-    if (hasHeart){
-      CTX.drawImage(IMG.heart, 480+i*(s+8)-(s/2), y-(s/2), s, s);
-    }else{
-      // fallback: puntito
-      CTX.fillStyle=i<player.lives?'#e14':'#555';
-      CTX.beginPath(); CTX.arc(480+i*(s+8), y+12, s/2, 0, Math.PI*2); CTX.fill();
-    }
+    if (hasHeart) CTX.drawImage(IMG.heart, 480+i*(s+8)-(s/2), y-(s/2), s, s);
+    else { CTX.fillStyle=i<player.lives?'#e14':'#555'; CTX.beginPath(); CTX.arc(480+i*(s+8), y+12, s/2, 0, Math.PI*2); CTX.fill(); }
   }
   CTX.globalAlpha=1;
 }
@@ -388,13 +407,13 @@ function drawGame(){
   drawTiled(IMG.ground, GROUND_Y(), LAYER_SCROLL.ground, IMG.ground.width||960);
 
   // coins
-  for(const c of coins){ const x=c.x-worldX; CTX.drawImage((c.sp?IMG.coinS:IMG.coin), x-16, c.y-16, 32,32); }
+  for(const c of coins){ const x=c.x-worldX; CTX.drawImage((c.sp?IMG.coinS:IMG.coin), x-DIM.coin.size/2, c.y-DIM.coin.size/2, DIM.coin.size, DIM.coin.size); }
   // obst
-  for(const o of obst){ const x=o.x-worldX; const im=o.kind==='tomb'?IMG.tomb:IMG.maus; CTX.drawImage(im, x, o.y, CFG.obst.drawW, CFG.obst.drawH); }
+  for(const o of obst){ const x=o.x-worldX; const im=o.kind==='tomb'?IMG.tomb:IMG.maus; CTX.drawImage(im, x, o.y, DIM.obst.drawW, DIM.obst.drawH); }
   // zombies
-  for(const z of zombies){ if(!z.alive) continue; const x=z.x-worldX; CTX.drawImage(IMG.zombie, x-6, z.y-6, z.w+12, z.h+12); }
-  // player (render con offset propio)
-  CTX.drawImage(IMG.player, player.x-16, player.y-10 + PLAYER_Y_OFFSET, 56,72);
+  for(const z of zombies){ if(!z.alive) continue; const x=z.x-worldX; CTX.drawImage(IMG.zombie, x-DIM.zombie.padDrawW/2, z.y-DIM.zombie.padDrawH/2, z.w+DIM.zombie.padDrawW, z.h+DIM.zombie.padDrawH); }
+  // player
+  CTX.drawImage(IMG.player, player.x + DIM.player.drawOffX, player.y + DIM.player.drawOffY, DIM.player.drawW, DIM.player.drawH);
 
   drawBeams();
   drawHUD();
@@ -410,7 +429,7 @@ function showOverlay(title, subtitle){
     <button id="startBtn">Start</button>`;
   overlay.querySelector('#startBtn').onclick=()=>{
     overlay.style.display='none';
-    startGame();            // gesto del usuario → permite reproducir música
+    startGame();  // gesto usuario → permite música
   };
 }
 
@@ -426,11 +445,10 @@ function tick(t){
 }
 function startGame(){
   bestScore = Number(localStorage.getItem('dh_best')||0);
-  reset(); running=true;
-  musicPlay();                  // música al iniciar
+  reset(); running=true; musicPlay();
 }
 
-/* Pausar música al perder foco de pestaña; reanudar al volver */
+/* Pausar música al cambiar de pestaña */
 document.addEventListener('visibilitychange', ()=>{
   if (document.hidden) musicPause();
   else if (running) musicPlay();
