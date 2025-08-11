@@ -163,7 +163,7 @@ function drawTiled(img, y, speed, tileW=img.width||960){
 let running=false, worldX=0, scrollSpeed=CFG.scrollSpeed;
 let score=0, bestScore = Number(localStorage.getItem('dh_best')||0);
 
-const player = { x:180, y:200, vy:0, onGround:true, coyote:0, w:48, h:64, lives:3, power:0 };
+const player = { x:180, y:400, vy:0, onGround:true, coyote:0, w:48, h:64, lives:3, power:0 };
 const coins=[], zombies=[], obst=[], beams=[];
 let nextCoinAt=0, nextSpecAt=0, nextZAt=0, nextObAt=0;
 
