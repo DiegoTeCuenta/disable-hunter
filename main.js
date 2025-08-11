@@ -59,7 +59,7 @@ const PLAYER_Y_OFFSET = 0;            // + más abajo / – más arriba (px)
 
 const GROUND_Y = () => H*0.66 + Y_OFFSET;   // dónde se dibuja el tile del piso
 const MID_Y    = () => H*0.08 + Y_OFFSET;   // parallax middle
-const FOG_Y    = () => H*0.52 + Y_OFFSET;   // parallax fog
+const FOG_Y    = () => H*0.55 + Y_OFFSET;   // parallax fog
 const LAYER_SCROLL = { mid:0.35, fog:0.55, ground:1.0 };
 
 /* Base de apoyo real sobre el piso para entidades (evita “hueco” visual) */
