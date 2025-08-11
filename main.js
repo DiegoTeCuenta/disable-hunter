@@ -385,7 +385,7 @@ function drawGame(){
   // zombies
   for(const z of zombies){ if(!z.alive) continue; const x=z.x-worldX; CTX.drawImage(IMG.zombie, x-6, z.y-6, z.w+12, z.h+12); }
   // player
-  CTX.drawImage(IMG.player, player.x-16, player.y + 40, 56, 72);
+  CTX.drawImage(IMG.player, player.x-16, player.y + 50, 56, 72);
 
   drawBeams();
   drawHUD();
