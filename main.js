@@ -52,7 +52,7 @@ addEventListener('resize', fitCanvas);
 
 /* ---------------- Parallax anchors + offsets de altura ---------------------- */
 /* Si “todo el juego” te queda muy arriba/abajo, ajusta SOLO este offset:   */
-let Y_OFFSET = 40;                    // + baja todo / - lo sube (px)
+let Y_OFFSET = 50;                    // + baja todo / - lo sube (px)
 
 /* Offset SOLO de render del jugador (no afecta física ni colisión) */
 const PLAYER_Y_OFFSET = 0;            // + más abajo / – más arriba (px)
