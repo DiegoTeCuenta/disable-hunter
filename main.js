@@ -60,6 +60,9 @@ const GROUND_Y = () => H*0.66 + Y_OFFSET;
 const MID_Y    = () => H*0.08 + Y_OFFSET;
 const FOG_Y    = () => H*0.52 + Y_OFFSET;
 const LAYER_SCROLL = { mid:0.35, fog:0.55, ground:1.0 };
+// --- Base de apoyo sobre el piso (para evitar el “hueco” visual)
+const GROUND_PAD = 14;               // ajusta 10–18 según veas el contacto
+const BASE_Y     = () => GROUND_Y() + GROUND_PAD; // “suelo real” para entidades
 
 /* --------------------- Assets con tolerancia a fallos ----------------------- */
 const IMG = {};
@@ -169,7 +172,7 @@ addEventListener('keyup',   e=>{ keys[e.key.toLowerCase()]=false; if(e.code==='S
 function reset(){
   worldX=0; scrollSpeed=CFG.scrollSpeed; score=0;
   coins.length=0; zombies.length=0; obst.length=0; beams.length=0;
-  player.y = GROUND_Y()-player.h; player.vy=0; player.onGround=true; player.coyote=0;
+  player.y = BASE_Y()-player.h; player.vy=0; player.onGround=true; player.coyote=0;
   player.lives=3; player.power=0;
 
   nextCoinAt = rand(...CFG.gaps.coin);
@@ -191,7 +194,7 @@ function update(dt){
   // física
   player.vy += CFG.gravity*dt;
   player.y  += player.vy*dt;
-  const gy = GROUND_Y()-player.h;
+  const gy = BASE_Y()-player.h;
   if (player.y >= gy){ player.y=gy; player.vy=0; player.onGround=true; player.coyote=CFG.coyote; }
   else { player.onGround=false; player.coyote-=dt; }
 
@@ -220,23 +223,23 @@ function update(dt){
 }
 function spawnWhile(){
   while(worldX>=nextCoinAt){
-    const y = GROUND_Y()-28 - rand(0,110);
+    const y = BASE_Y()()-28 - rand(0,110);
     coins.push({x:worldX+W+rand(80,220), y, sp:false});
     nextCoinAt += rand(...CFG.gaps.coin);
   }
   while(worldX>=nextSpecAt){
-    const y = GROUND_Y()-28 - rand(40,140);
+    const y = BASE_Y())-28 - rand(40,140);
     coins.push({x:worldX+W+rand(140,260), y, sp:true});
     nextSpecAt += rand(...CFG.gaps.spec);
   }
   while(worldX>=nextZAt){
-    zombies.push({x:worldX+W+rand(240,380), y:GROUND_Y()-58, w:44, h:58, alive:true});
+    zombies.push({x:worldX+W+rand(240,380), y:BASE_Y()-58, w:44, h:58, alive:true});
     nextZAt += rand(...CFG.gaps.zom);
   }
   while(worldX>=nextObAt){
     if (Math.random()<CFG.gaps.obstChance){
       const kind=Math.random()<0.5?'tomb':'maus';
-      obst.push({x:worldX+W+rand(260,420), y:GROUND_Y()-CFG.obst.drawH+6, w:CFG.obst.hitW, h:CFG.obst.hitH, kind});
+      obst.push({x:worldX+W+rand(260,420), y:BASE_Y()-CFG.obst.drawH+6, w:CFG.obst.hitW, h:CFG.obst.hitH, kind});
     }
     nextObAt += rand(...CFG.gaps.obst);
   }
