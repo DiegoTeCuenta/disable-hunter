@@ -1,4 +1,4 @@
-/* ===================== Disabled Hunter — main.js (SAFE RZ6) ================== */
+/* ===================== Disabled Hunter — main.js (SAFE RZ6+MUSIC) =========== */
 /* ----------------------- CONFIG (tus valores) -------------------------------- */
 const CFG = {
   scrollSpeed: 150,
@@ -32,7 +32,10 @@ const CFG = {
     powerY:  42,
     powerW:  520,
     powerH:   10
-  }
+  },
+
+  // volumen de la música (0–1)
+  musicVol: 0.35,
 };
 
 /* --------------------- CORE: canvas & dimensiones --------------------------- */
@@ -94,6 +97,17 @@ function loadAudio(key, src, volume=1){
 function sfxReset(name){ const a=SFX[name]; if(a){ a.currentTime=0; } }
 function sfxPlay(name){ const a=SFX[name]; if(a && a.play){ a.play(); } }
 
+/* ---- música (helpers) ------------------------------------------------------ */
+function musicPlay(){
+  const m=SFX.music;
+  if(!m) return;
+  m.loop = true;
+  m.volume = CFG.musicVol ?? 0.35;
+  // algunos navegadores requieren gesto de usuario; el .catch evita errores en consola
+  m.play?.().catch(()=>{});
+}
+function musicPause(){ const m=SFX.music; if(m) m.pause?.(); }
+
 async function loadAll(){
   await Promise.all([
     loadImage('bg',    'assets/tiles/bg_static_1920x1080.png', {w:1920,h:1080}),
@@ -116,11 +130,15 @@ async function loadAll(){
     loadImage('heart','assets/ui/ui_heart_32.png',{w:32,h:32})
   ]);
 
+  // SFX
   loadAudio('coin',  'assets/sfx_coin.wav',  0.35);
   loadAudio('power', 'assets/sfx_power.wav', 0.45);
   loadAudio('beam',  'assets/sfx_beam.wav',  0.45);
   loadAudio('zdie',  'assets/sfx_zombie_die.wav',0.45);
   loadAudio('over',  'assets/sfx_gameover.wav',0.55);
+
+  // Música de fondo
+  loadAudio('music','assets/music.mp3', CFG.musicVol ?? 0.35);
 }
 
 /* ---------------------- Utilidades dibujo/scroll ---------------------------- */
@@ -202,6 +220,7 @@ function update(dt){
     localStorage.setItem('dh_best', Math.max(bestScore, score));
     bestScore = Number(localStorage.getItem('dh_best')||0);
     running=false;
+    musicPause(); // detener música en game over
     showOverlay('Disabled Hunter', `Score: ${score}\nBest: ${bestScore}${MISSING.length?`\n\nMissing:\n${MISSING.join('\n')}`:''}`);
   }
 }
@@ -381,7 +400,8 @@ function showOverlay(title, subtitle){
     <p style="white-space:pre-line">${subtitle||''}</p>
     <button id="startBtn">Start</button>`;
   overlay.querySelector('#startBtn').onclick=()=>{
-    overlay.style.display='none'; startGame();
+    overlay.style.display='none';
+    startGame();            // gesto del usuario → permite reproducir música
   };
 }
 
@@ -398,7 +418,14 @@ function tick(t){
 function startGame(){
   bestScore = Number(localStorage.getItem('dh_best')||0);
   reset(); running=true;
+  musicPlay();                  // música al iniciar
 }
+
+/* Pausar música al perder foco de pestaña; reanudar al volver */
+document.addEventListener('visibilitychange', ()=>{
+  if (document.hidden) musicPause();
+  else if (running) musicPlay();
+});
 
 /* ----------------------------- Arranque seguro ------------------------------ */
 window.addEventListener('error', (e)=>{
