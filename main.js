@@ -2,10 +2,10 @@
 /* ----------------------- AJUSTES PRINCIPALES -------------------------------- */
 
 // Escala global de entidades (player, zombies, monedas, tumbas, rayo)
-const SCALE_FACTOR = 2.00;   // 1.0 = igual | 1.2 = 20% más grandes | 0.9 = 10% más chicos
+const SCALE_FACTOR = 2.20;   // 1.0 = igual | 1.2 = 20% más grandes | 0.9 = 10% más chicos
 
 // Offset vertical global de TODO el juego (capas + entidades)
-let Y_OFFSET = 40;           // + baja todo / – lo sube (en píxeles)
+let Y_OFFSET = 30;           // + baja todo / – lo sube (en píxeles)
 
 /* ----------------------- CONFIG DE JUEGO (tu setup) ------------------------- */
 const CFG = {
