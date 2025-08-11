@@ -63,7 +63,7 @@ const FOG_Y    = () => H*0.52 + Y_OFFSET;   // parallax fog
 const LAYER_SCROLL = { mid:0.35, fog:0.55, ground:1.0 };
 
 /* Base de apoyo real sobre el piso para entidades (evita “hueco” visual) */
-const GROUND_PAD = 30;                      // 10–18 según veas contacto
+const GROUND_PAD = 40;                      // 10–18 según veas contacto
 const BASE_Y     = () => GROUND_Y() + GROUND_PAD;  // “suelo real” para físicas
 
 /* --------------------- Assets con tolerancia a fallos ----------------------- */
